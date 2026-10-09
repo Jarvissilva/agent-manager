@@ -22,6 +22,15 @@ export default defineConfig([
     languageOptions: { globals: globals.browser },
   },
   {
+    files: ['client/src/pages/**/*.tsx'],
+    rules: {
+      'react-refresh/only-export-components': [
+        'error',
+        { allowExportNames: ['projectsLoader', 'projectsAction'] },
+      ],
+    },
+  },
+  {
     files: ['server/src/**/*.ts', 'client/vite.config.ts', '*.mjs'],
     languageOptions: { globals: globals.node },
   },

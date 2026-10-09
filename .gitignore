@@ -3,6 +3,7 @@ dist/
 .pnpm-store/
 .cache/
 *.tsbuildinfo
+server/data/
 .env
 .env.*
 !.env.example
