@@ -1,130 +1,180 @@
-:root {
-  font-family: system-ui, sans-serif;
-  color: #20252b;
-  background: #f6f7f9;
-  line-height: 1.5;
-  font-synthesis: none;
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
+@import '@fontsource-variable/geist';
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-heading: var(--font-sans);
+  --font-sans: 'Geist Variable', sans-serif;
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-body {
-  margin: 0;
+:root,
+.dark {
+  color-scheme: dark;
+  --background: #212121;
+  --foreground: #ececec;
+  --card: #252525;
+  --card-foreground: #ececec;
+  --popover: #2f2f2f;
+  --popover-foreground: #ececec;
+  --primary: #f4f4f4;
+  --primary-foreground: #171717;
+  --secondary: #303030;
+  --secondary-foreground: #ececec;
+  --muted: #303030;
+  --muted-foreground: #a6a6a6;
+  --accent: #383838;
+  --accent-foreground: #f4f4f4;
+  --destructive: #ff9898;
+  --border: #3a3a3a;
+  --input: #424242;
+  --ring: #8a8a8a;
+  --radius: 0.75rem;
+  --sidebar: #171717;
+  --sidebar-foreground: #e4e4e4;
+  --sidebar-primary: #ececec;
+  --sidebar-primary-foreground: #171717;
+  --sidebar-accent: #282828;
+  --sidebar-accent-foreground: #ececec;
+  --sidebar-border: #2c2c2c;
+  --sidebar-ring: #8a8a8a;
 }
 
-* {
-  box-sizing: border-box;
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    margin: 0;
+  }
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']),
+  summary {
+    cursor: pointer;
+  }
+  ::selection {
+    background: #666666;
+    color: #ffffff;
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #505050 transparent;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
 }
 
-main {
-  max-width: 760px;
-  margin: 0 auto;
-  padding: 48px 24px;
-}
-
-header {
-  margin-bottom: 32px;
-}
-
-h1,
-h2,
-h3,
-p {
-  margin: 0 0 12px;
-}
-
-h1 {
-  font-size: 2rem;
-}
-
-h2 {
-  font-size: 1.125rem;
-}
-
-h3 {
-  font-size: 1rem;
-}
-
-.eyebrow,
-.hint,
-header > p,
-code {
-  color: #596370;
-}
-
-.eyebrow {
-  font-size: 0.875rem;
-}
-
-section {
-  padding: 24px;
-  margin-bottom: 24px;
-  border: 1px solid #dce1e7;
-  border-radius: 12px;
-  background: #fff;
-}
-
-form {
-  display: grid;
-  gap: 8px;
-}
-
-input,
-button {
-  font: inherit;
-  border-radius: 6px;
-}
-
-input {
-  width: 100%;
-  border: 1px solid #aeb8c4;
-  padding: 10px 12px;
-  margin-bottom: 8px;
-}
-
-button {
-  justify-self: start;
-  padding: 10px 18px;
-  border: 0;
-  background: #253e66;
-  color: #fff;
-  cursor: pointer;
-}
-
-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-input:focus-visible,
-button:focus-visible {
-  outline: 3px solid #719adb;
-  outline-offset: 2px;
-}
-
-.hint {
-  font-size: 0.875rem;
-}
-
-.error {
-  color: #b42318;
-}
-
-.notice {
-  color: #23633b;
-  margin: 0;
-}
-
-.projects {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.projects li + li {
-  border-top: 1px solid #dce1e7;
-  margin-top: 16px;
-  padding-top: 16px;
-}
-
-code {
-  overflow-wrap: anywhere;
+@layer components {
+  .chat-markdown {
+    @apply min-w-0 text-[15px] leading-7 break-words sm:text-base;
+  }
+  .chat-markdown > :first-child {
+    @apply mt-0;
+  }
+  .chat-markdown > :last-child {
+    @apply mb-0;
+  }
+  .chat-markdown p {
+    @apply my-4 whitespace-pre-wrap;
+  }
+  .chat-markdown h1 {
+    @apply mt-8 mb-4 text-2xl font-semibold tracking-tight;
+  }
+  .chat-markdown h2 {
+    @apply mt-7 mb-3 text-xl font-semibold tracking-tight;
+  }
+  .chat-markdown h3 {
+    @apply mt-6 mb-3 text-lg font-semibold;
+  }
+  .chat-markdown ul {
+    @apply my-4 list-disc space-y-2 pl-6;
+  }
+  .chat-markdown ol {
+    @apply my-4 list-decimal space-y-2 pl-6;
+  }
+  .chat-markdown li > p {
+    @apply my-1;
+  }
+  .chat-markdown a {
+    @apply underline decoration-muted-foreground underline-offset-4 hover:decoration-foreground;
+  }
+  .chat-markdown :not(pre) > code {
+    @apply rounded-md bg-muted px-1.5 py-0.5 font-mono text-[0.85em];
+  }
+  .chat-markdown pre code {
+    @apply bg-transparent font-mono text-inherit;
+  }
+  .chat-markdown blockquote {
+    @apply my-5 border-l-2 border-muted-foreground pl-4 text-muted-foreground;
+  }
+  .chat-markdown hr {
+    @apply my-6 border-border;
+  }
+  .chat-markdown table {
+    @apply my-5 block max-w-full overflow-x-auto border-collapse text-sm;
+  }
+  .chat-markdown th,
+  .chat-markdown td {
+    @apply border border-border px-3 py-2 text-left;
+  }
+  .chat-markdown th {
+    @apply bg-muted font-medium;
+  }
+  .chat-markdown img {
+    @apply my-4 max-h-96 max-w-full rounded-xl object-contain;
+  }
 }

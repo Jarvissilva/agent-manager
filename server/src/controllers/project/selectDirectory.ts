@@ -49,7 +49,7 @@ signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
 try:
     returned_handle = str(portal.OpenFile(
         "",
-        "Choose project folder",
+        "Choose folder",
         {
             "handle_token": token,
             "directory": dbus.Boolean(True),

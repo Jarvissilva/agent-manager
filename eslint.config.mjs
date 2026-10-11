@@ -22,16 +22,60 @@ export default defineConfig([
     languageOptions: { globals: globals.browser },
   },
   {
-    files: ['client/src/pages/**/*.tsx'],
+    files: ['client/src/components/ui/**/*.tsx'],
     rules: {
       'react-refresh/only-export-components': [
         'error',
-        { allowExportNames: ['projectsLoader', 'projectsAction'] },
+        {
+          allowExportNames: ['buttonVariants', 'badgeVariants'],
+        },
       ],
     },
   },
   {
-    files: ['server/src/**/*.ts', 'client/vite.config.ts', '*.mjs'],
+    files: ['client/src/pages/**/*.tsx', 'client/src/layouts/**/*.tsx'],
+    rules: {
+      'react-refresh/only-export-components': [
+        'error',
+        {
+          allowExportNames: [
+            'homeLoader',
+            'newAgentLoader',
+            'projectsLoader',
+            'newProjectAction',
+            'projectLoader',
+            'sessionsLoader',
+            'schedulesLoader',
+            'sessionLoader',
+            'sessionAction',
+            'agentsLoader',
+            'agentLoader',
+            'newAgentAction',
+            'editAgentAction',
+            'skillsLoader',
+            'skillLoader',
+            'newSkillAction',
+            'editSkillAction',
+            'jobsLoader',
+            'jobLoader',
+            'jobAction',
+            'runsLoader',
+            'runLoader',
+            'runAction',
+            'scheduleLoader',
+            'scheduleAction',
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: [
+      'server/src/**/*.ts',
+      'server/tests/**/*.mjs',
+      'client/vite.config.ts',
+      '*.mjs',
+    ],
     languageOptions: { globals: globals.node },
   },
 ]);
