@@ -71,7 +71,7 @@ export default function Home() {
           <Icon name="chat" />
           New chat
         </h2>
-        <start.Form method="post" action="/home" className="space-y-4">
+        <start.Form method="post" action="/?index" className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="home-project">Project (optional)</Label>

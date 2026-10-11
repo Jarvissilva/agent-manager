@@ -18,7 +18,7 @@ export async function projectsLoader({ request }: LoaderFunctionArgs) {
   return loadProjects(request.signal);
 }
 const navigationItems: { to: string; label: string; icon: IconName }[] = [
-  { to: '/home', label: 'Home', icon: 'home' },
+  { to: '/', label: 'Home', icon: 'home' },
   { to: '/sessions', label: 'Sessions', icon: 'chat' },
   { to: '/schedules', label: 'Scheduled', icon: 'clock' },
   { to: '/projects', label: 'Projects', icon: 'folder' },

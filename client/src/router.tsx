@@ -60,8 +60,8 @@ const router = createBrowserRouter([
         loader: scheduleLoader,
         action: scheduleAction,
       },
-      { index: true, loader: () => redirect('/sessions') },
-      { path: 'home', Component: Home, loader: homeLoader, action: homeAction },
+      { index: true, Component: Home, loader: homeLoader, action: homeAction },
+      { path: 'home', loader: () => redirect('/') },
       { path: 'sessions', Component: Sessions, loader: sessionsLoader },
       {
         path: 'sessions/new',

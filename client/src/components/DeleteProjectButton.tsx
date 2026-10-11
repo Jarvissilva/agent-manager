@@ -1,3 +1,5 @@
+import { useState } from 'react';
+import useLiveRefresh from '../hooks/useLiveRefresh';
 import { useFetcher } from 'react-router';
 import { Trash2 } from 'lucide-react';
 import type { Project } from '../lib/projects';
@@ -16,10 +18,17 @@ import {
 
 export default function DeleteProjectButton({ project }: { project: Project }) {
   const fetcher = useFetcher<typeof projectsAction>();
+  const [open, setOpen] = useState(false);
   const busy = fetcher.state !== 'idle';
+  useLiveRefresh(open && !busy);
   const hasSessions = project.sessionCount > 0;
   return (
-    <AlertDialog>
+    <AlertDialog
+      open={open}
+      onOpenChange={(value) => {
+        if (!busy) setOpen(value);
+      }}
+    >
       <AlertDialogTrigger asChild>
         <Button
           type="button"

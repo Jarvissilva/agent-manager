@@ -19,7 +19,7 @@ Desktop navigation uses a narrow sidebar with Home, Sessions, Scheduled, Project
 Projects are optional collections: start directly at `/sessions/new` and choose a folder,
 provider, and optional agent/project. Conversations use `/sessions/:sessionId`.
 The composer contains model, reasoning, provider, and file access settings.
-Projects (`/projects`) provides a searchable list with inline name editing and deletion. Deleting a project with sessions requires choosing to keep them under No project or delete their saved records and messages. End running sessions before deleting their records; keeping sessions preserves running processes. Schedules are kept under No project. Projects have no individual overview pages; sessions and schedules live in their global lists. Home (`/home`) starts a chat directly with an optional project, provider, and working folder, and lists running/stopping sessions with live refresh.
+Projects (`/projects`) provides a searchable list with inline name editing and deletion. Deleting a project with sessions requires choosing to keep them under No project or delete their saved records and messages. End running sessions before deleting their records; keeping sessions preserves running processes. Schedules are kept under No project. Projects have no individual overview pages; sessions and schedules live in their global lists. Home (`/`) starts a chat directly with an optional project, provider, and working folder, and lists running/stopping sessions with live refresh.
 Older project chat and schedule URLs redirect to the canonical global routes.
 
 ## Development
@@ -354,43 +354,69 @@ converts existing schedules into one-step definitions, and preserves historical 
 
 No Redis or separate worker is required.
 
-## Private remote access with Tailscale
+## Production with PM2 and private Tailscale access
 
-The production server serves `client/dist`, the API, and terminal WebSockets
-from one loopback port, `127.0.0.1:3001`. Build both workspaces before starting it.
-React routes also work when opened directly or refreshed. Development can still
-use Vite normally.
+The production server serves `client/dist`, the API, and chat/terminal WebSockets
+from one loopback port, `127.0.0.1:6001`. React routes also work when opened
+directly or refreshed. Development still uses Vite and server port `3001`.
+The server accepts a `PORT` environment variable; the root PM2 ecosystem file
+sets it to `6001` and runs one process to coordinate sessions and schedules.
 
-Create a root `.env` using `.env.example` and set
-`AGENT_MANAGER_PUBLIC_ORIGIN=https://your-machine.your-tailnet.ts.net` to your exact
-Tailscale HTTPS origin. The server's dev/start scripts load this optional file;
-existing shell environment variables take precedence. An empty value preserves
-localhost-only browser origins. Restart the server after changing the value.
-Only the configured HTTPS origin and existing matching localhost origins are
-accepted; unrelated origins and mismatched hosts are rejected for API requests
-and terminal WebSockets.
+Create a root `.env` using `.env.example` and set your exact trusted origin:
 
-```sh
-pnpm build
-pnpm --filter @agent-manager/server start
+```dotenv
+AGENT_MANAGER_PUBLIC_ORIGIN=https://agent-manager.example.ts.net
 ```
 
-In another terminal on the host:
+The server's dev/start scripts and PM2 configuration load this optional file;
+existing process environment variables take precedence. An empty value preserves
+localhost-only browser origins. Restart the server after changing it.
+Only the configured HTTPS origin and matching localhost origins are accepted;
+unrelated origins and mismatched hosts are rejected for API requests and
+WebSockets. Local browser access is available at `http://localhost:6001`;
+use the Tailscale HTTPS address for remote access.
+
+PM2 must be installed on the host. From the repository root:
 
 ```sh
-tailscale serve --bg http://127.0.0.1:3001
+pnpm prod:start
+pnpm prod:status
+pnpm prod:logs
+```
+
+`prod:start` builds both workspaces and starts or restarts only `agent-manager`.
+Use `pnpm prod:restart` after environment changes, `pnpm prod:stop` to stop it,
+and `pnpm prod:start` to deploy code changes. Restarting ends live agent sessions.
+PM2 automatically restarts a crashed server; file watching is disabled.
+
+Define a Tailscale Service named `agent-manager` with endpoint `tcp:443` in the
+admin console. The host must have a tag-based identity. Configure its destination:
+
+```sh
+sudo tailscale serve --service=svc:agent-manager --https=443 http://127.0.0.1:6001
 tailscale serve status
 ```
 
-Follow any Tailscale enablement prompts. Open the resulting HTTPS URL on a device
-connected to your tailnet. Use Serve for private access; this setup does not use
-Funnel or expose Express on a public interface. Tailscale access rules determine
-which devices/users can reach it; the app has no separate account login.
+Approve the service host in the admin console if required. On a device connected
+to your tailnet, open `https://agent-manager.example.ts.net` (replace the tailnet
+suffix for another network). Serve provides private access; this setup does not
+use Funnel or expose Express on a public interface. Tailscale access rules
+determine which devices/users can reach it; the app has no separate account login.
 
-The host must remain awake and Agent Manager must remain running. `--bg` keeps
-Serve configured, not the Node server. Automatic startup after reboot is not
-configured. The native folder picker still opens on the host's desktop, not on
-the remote phone; existing projects work remotely without using the picker.
+After verifying the app, save the complete PM2 process list:
+
+```sh
+pm2 save
+systemctl is-enabled pm2-user tailscaled
+```
+
+On this host both boot services are already enabled. On a new host, run
+`pm2 startup` as the app user and execute its generated systemd installation
+command, then `pm2 save`. Enable Tailscale with
+`sudo systemctl enable --now tailscaled`. The saved service mapping persists
+across reboots. The host must remain awake. The native folder picker opens on
+the host's desktop, not on the remote phone; saved folders or manual paths can
+be used remotely.
 
 ## Checks and build
 

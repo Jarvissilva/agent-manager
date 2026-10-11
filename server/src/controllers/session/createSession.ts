@@ -178,6 +178,11 @@ export default async function createSession(
       request.body?.settings !== undefined
         ? await validateChatSettings(request.body.settings, provider, directory)
         : undefined;
+    if (projectId !== null && !findProject(projectId))
+      throw new RequestError(
+        409,
+        'This project was deleted while starting the session. Choose another project or no project.',
+      );
     const session = startSession(
       projectId,
       directory,
