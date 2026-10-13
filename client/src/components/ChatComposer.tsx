@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useFetcher } from 'react-router';
-import { ChevronDown, Brain, ShieldCheck } from 'lucide-react';
+import { ChevronDown, Brain, ShieldCheck, ListChecks } from 'lucide-react';
 import Icon from './Icon';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -245,6 +245,30 @@ export default function ChatComposer({
         )}
         <div className="flex items-end justify-between gap-1">
           <div className="flex min-w-0 flex-wrap items-center gap-0.5">
+            {provider !== 'opencode' && (
+              <Button
+                type="button"
+                variant={settings.mode === 'plan' ? 'default' : 'ghost'}
+                className="h-8 gap-1 rounded-full px-2.5 text-xs"
+                disabled={busy}
+                aria-label="Plan mode"
+                aria-pressed={settings.mode === 'plan'}
+                title={
+                  settings.mode === 'plan'
+                    ? 'Plan mode on — click to return to execution'
+                    : 'Plan mode off — click to plan before implementation'
+                }
+                onClick={() =>
+                  setSettings((previous) => ({
+                    ...previous,
+                    mode: previous.mode === 'plan' ? 'default' : 'plan',
+                  }))
+                }
+              >
+                <ListChecks className="size-3.5" />
+                Plan
+              </Button>
+            )}
             {onProviderChange && !fetcher.data?.sessionId && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -449,7 +473,7 @@ export default function ChatComposer({
                   aria-label="Chat settings"
                   title="Chat settings"
                   disabled={busy}
-                  className="size-8 rounded-full text-muted-foreground"
+                  className={`size-8 rounded-full ${settings.permissions === 'danger-full-access' || settings.approvalPolicy === 'never' ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}`}
                 >
                   <Icon name="settings" />
                 </Button>
@@ -457,25 +481,90 @@ export default function ChatComposer({
               <DropdownMenuContent side="top" align="start" className="w-72">
                 <DropdownMenuLabel className="flex items-center gap-2">
                   <ShieldCheck className="size-4" />
-                  File access
+                  Permissions
                 </DropdownMenuLabel>
+                {provider !== 'antigravity' && (
+                  <>
+                    <DropdownMenuLabel className="text-xs text-muted-foreground">
+                      File access
+                    </DropdownMenuLabel>
+                    <DropdownMenuRadioGroup
+                      value={settings.permissions}
+                      onValueChange={(value) =>
+                        setSettings({
+                          ...settings,
+                          permissions: value as ChatSettings['permissions'],
+                          ...(provider === 'codex' &&
+                          value === 'danger-full-access'
+                            ? { networkAccess: true }
+                            : {}),
+                        })
+                      }
+                    >
+                      <DropdownMenuRadioItem value="workspace-write">
+                        Edit project files
+                      </DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="read-only">
+                        Read files only
+                      </DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="danger-full-access">
+                        Full access
+                      </DropdownMenuRadioItem>
+                    </DropdownMenuRadioGroup>
+                  </>
+                )}
+                {provider === 'codex' && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel>Network access</DropdownMenuLabel>
+                    <DropdownMenuRadioGroup
+                      value={
+                        settings.permissions === 'danger-full-access' ||
+                        settings.networkAccess
+                          ? 'enabled'
+                          : 'disabled'
+                      }
+                      onValueChange={(value) =>
+                        setSettings({
+                          ...settings,
+                          networkAccess: value === 'enabled',
+                        })
+                      }
+                    >
+                      <DropdownMenuRadioItem
+                        value="disabled"
+                        disabled={settings.permissions === 'danger-full-access'}
+                      >
+                        Disabled in sandbox
+                      </DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="enabled">
+                        Enabled
+                      </DropdownMenuRadioItem>
+                    </DropdownMenuRadioGroup>
+                  </>
+                )}
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel>Approval policy</DropdownMenuLabel>
                 <DropdownMenuRadioGroup
-                  value={settings.permissions}
+                  value={settings.approvalPolicy ?? 'on-request'}
                   onValueChange={(value) =>
                     setSettings({
                       ...settings,
-                      permissions: value as ChatSettings['permissions'],
+                      approvalPolicy: value as ChatSettings['approvalPolicy'],
                     })
                   }
                 >
-                  <DropdownMenuRadioItem value="workspace-write">
-                    Edit project files
+                  <DropdownMenuRadioItem value="on-request">
+                    Ask when needed
                   </DropdownMenuRadioItem>
-                  {provider !== 'antigravity' && (
-                    <DropdownMenuRadioItem value="read-only">
-                      Read files only
+                  {provider === 'codex' && (
+                    <DropdownMenuRadioItem value="untrusted">
+                      Ask for untrusted commands
                     </DropdownMenuRadioItem>
                   )}
+                  <DropdownMenuRadioItem value="never">
+                    Never ask
+                  </DropdownMenuRadioItem>
                 </DropdownMenuRadioGroup>
                 {intent === 'new-message' && !fetcher.data?.sessionId && (
                   <>
@@ -505,13 +594,18 @@ export default function ChatComposer({
                 )}
                 <DropdownMenuSeparator />
                 <p className="px-2 py-2 text-xs leading-5 text-muted-foreground">
+                  Changes apply to your next message.{' '}
                   {provider === 'opencode'
                     ? settings.permissions === 'read-only'
                       ? 'Tool policy disables edits, commands and subagents. This is not an OS sandbox.'
-                      : 'Project edits are allowed. Commands and external tools need approval.'
+                      : settings.permissions === 'danger-full-access'
+                        ? 'Tools can access files outside your working folder. This is not an OS or network sandbox.'
+                        : 'Project edits are allowed. Other tools require approval; Never ask blocks those tools.'
                     : provider === 'antigravity'
-                      ? 'Uses local agy permissions. Configure MCP tools in agy.'
-                      : 'Applies to your next message. Commands that need permission ask for approval.'}
+                      ? 'Uses local agy permissions. Never ask bypasses tool permission prompts. File and network sandbox controls are unavailable.'
+                      : settings.permissions === 'danger-full-access'
+                        ? 'Full access disables the file and network sandbox.'
+                        : 'Never ask keeps the sandbox and denies actions requiring approval.'}
                 </p>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -551,7 +645,10 @@ export default function ChatComposer({
       <p className="mt-2.5 text-center text-[11px] leading-4 text-muted-foreground">
         {settings.permissions === 'read-only'
           ? 'Read-only access'
-          : 'Works in your selected folder'}
+          : settings.permissions === 'danger-full-access'
+            ? 'Full access'
+            : 'Works in your selected folder'}
+        {settings.approvalPolicy === 'never' && ' · No approval prompts'}
         <span className="mx-1.5">·</span>Review important changes
       </p>
     </div>

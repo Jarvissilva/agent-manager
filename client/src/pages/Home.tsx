@@ -32,11 +32,16 @@ export default function Home() {
   );
   useLiveRefresh(true);
   const project = projects.find((project) => String(project.id) === projectId);
-  const active = sessions.filter((session) =>
-    ['running', 'stopping'].includes(session.status),
+  const active = sessions.filter((session) => session.activity === 'running');
+  const needsInput = sessions.filter(
+    (session) => session.activity === 'needs_input',
   );
   const projectSession = project
-    ? active.find((session) => session.projectId === project.id)
+    ? sessions.find(
+        (session) =>
+          session.projectId === project.id &&
+          ['running', 'stopping'].includes(session.status),
+      )
     : undefined;
   const queued =
     project &&
@@ -57,7 +62,7 @@ export default function Home() {
       <header className="mb-6 space-y-2">
         <h1 className="text-2xl font-semibold">What are we working on?</h1>
         <p className="text-sm text-muted-foreground">
-          Start a new chat or pick up a running session.
+          Start a new chat or continue a conversation.
         </p>
       </header>
       <section
@@ -166,7 +171,7 @@ export default function Home() {
             className="flex items-center gap-2 text-base font-medium"
           >
             <Icon name="activity" />
-            Active sessions
+            Running sessions
             <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
               {active.length}
             </span>
@@ -182,10 +187,24 @@ export default function Home() {
           <SessionList sessions={active} projects={projects} />
         ) : (
           <p className="rounded-2xl border border-dashed py-8 text-center text-sm text-muted-foreground">
-            No active sessions. Start a chat above to get going.
+            No sessions are running. Start a chat above to get going.
           </p>
         )}
       </section>
+      {needsInput.length > 0 && (
+        <section aria-labelledby="needs-input-title" className="mt-8 space-y-4">
+          <h2
+            id="needs-input-title"
+            className="flex items-center gap-2 text-base font-medium"
+          >
+            Needs input
+            <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+              {needsInput.length}
+            </span>
+          </h2>
+          <SessionList sessions={needsInput} projects={projects} />
+        </section>
+      )}
     </main>
   );
 }

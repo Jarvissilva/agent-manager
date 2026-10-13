@@ -36,10 +36,7 @@ export default function Sessions() {
           : String(session.projectId) === projectId)) &&
       (!query.get('folder') ||
         session.workingDirectory === query.get('folder')) &&
-      (!query.get('status') ||
-        (['running', 'queued', 'stopping'].includes(session.status)
-          ? session.status
-          : (session.outcome ?? session.status)) === query.get('status')) &&
+      (!query.get('status') || session.activity === query.get('status')) &&
       `${project?.name ?? 'No project'} ${session.workingDirectory} ${session.provider} ${session.name ?? ''} ${session.agentName ?? ''} ${session.scheduleName ?? ''} ${session.stepName ?? ''}`
         .toLowerCase()
         .includes(search)
@@ -79,18 +76,7 @@ export default function Sessions() {
         paths={[
           ...new Set(sessions.map((session) => session.workingDirectory)),
         ]}
-        statuses={[
-          'running',
-          'queued',
-          'stopping',
-          'exited',
-          'interrupted',
-          'succeeded',
-          'failed',
-          'cancelled',
-          'timed_out',
-          'skipped',
-        ]}
+        statuses={['running', 'needs_input', 'ready', 'error', 'queued']}
         grouping
       />
       <p className="mb-4 text-xs text-muted-foreground" role="status">

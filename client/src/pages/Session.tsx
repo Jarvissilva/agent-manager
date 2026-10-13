@@ -1,4 +1,5 @@
 import RenameSessionDialog from '../components/RenameSessionDialog';
+import DeleteSessionDialog from '../components/DeleteSessionDialog';
 import WorkingDirectoryField from '../components/WorkingDirectoryField';
 import { loadProjects } from '../lib/projects';
 import { NativeSelect } from '@/components/ui/native-select';
@@ -9,7 +10,6 @@ import {
   redirect,
   useFetcher,
   useLoaderData,
-  useOutletContext,
   useSearchParams,
   useParams,
   useNavigate,
@@ -20,11 +20,11 @@ import { api } from '../lib/api';
 import type { Agent } from '../types/agent';
 import type { Session as SessionInfo } from '../types/session';
 import type { ProviderModel } from '../types/chat';
-import type { AppOutletContext } from '../layouts/AppLayout';
 import SessionChat from '../components/SessionChat';
 import SessionTerminal from '../components/SessionTerminal';
 import ChatComposer from '../components/ChatComposer';
 import Icon from '../components/Icon';
+import StatusBadge from '../components/StatusBadge';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -32,9 +32,8 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
-import { ChevronDown, SquarePen } from 'lucide-react';
+import { ChevronDown, SquarePen, Trash2 } from 'lucide-react';
 import useLiveRefresh from '../hooks/useLiveRefresh';
 
 export async function sessionLoader({ params, request }: LoaderFunctionArgs) {
@@ -123,12 +122,6 @@ export async function sessionAction({ params, request }: ActionFunctionArgs) {
         name: form.get('name'),
       });
       return { renamed: true };
-    }
-    if (intent === 'assign-project') {
-      await api(`/sessions/${sessionId}`, request.signal, 'PATCH', {
-        projectId: form.get('projectId') ? Number(form.get('projectId')) : null,
-      });
-      return { sent: false };
     }
     if (intent === 'cancel' || intent === 'stop') {
       await api(`/sessions/${sessionId}/cancel`, request.signal, 'POST', {});
@@ -229,8 +222,8 @@ export default function Session() {
   const navigate = useNavigate();
   const { sessionId } = useParams();
   const [renaming, setRenaming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [view, setView] = useState<'chat' | 'terminal'>('chat');
-  const { toggleNavigation } = useOutletContext<AppOutletContext>();
   const control = useFetcher<{ error?: string }>();
   const [directory, setDirectory] = useState(data.workingDirectory);
   const catalog = useFetcher<typeof sessionLoader>();
@@ -283,66 +276,66 @@ export default function Session() {
   const history = data.sessions.filter(
     (session) => session.mode === 'interactive',
   );
+  const workingDirectory = selected?.workingDirectory ?? directory;
+  const folderName = workingDirectory
+    ? (workingDirectory.split('/').filter(Boolean).at(-1) ?? workingDirectory)
+    : 'Choose a working folder';
   return (
     <main className="session-page flex min-h-0 w-full flex-1 flex-col overflow-hidden">
       <header className="flex h-16 shrink-0 items-center justify-between gap-2 px-3 md:px-4">
         <div className="session-page-title flex min-w-0 items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="hidden md:inline-flex"
-            aria-label="Toggle sidebar labels"
-            onClick={toggleNavigation}
-          >
-            <Icon name="menu" />
-          </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"
                 className="h-10 min-w-0 gap-2 px-2 text-base font-medium"
+                title={workingDirectory || 'Choose a working folder'}
+                aria-label={`Session details: ${folderName}`}
               >
-                <span className="truncate">
-                  {selected
-                    ? (selected.name ?? selected.stepName ?? 'New session')
-                    : 'New session'}
-                </span>
-                <ChevronDown className="size-4 text-muted-foreground" />
+                <span className="truncate">{folderName}</span>
+                <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent className="w-60" align="start">
-              <DropdownMenuLabel className="break-all font-normal text-muted-foreground">
-                {(selected?.workingDirectory ?? directory) ||
-                  'Choose a working folder'}
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {['sessions', 'schedules'].map((tab) => (
-                <DropdownMenuItem asChild key={tab}>
-                  <Link
-                    to={
-                      data.project
-                        ? `/${tab}?projectId=${data.project.id}`
-                        : `/${tab}`
-                    }
-                  >
-                    <Icon name={tab === 'sessions' ? 'chat' : 'clock'} />
-                    <span>
-                      {tab === 'sessions'
-                        ? data.project
-                          ? 'Project sessions'
-                          : 'All sessions'
-                        : data.project
-                          ? 'Scheduled for project'
-                          : 'Scheduled'}
-                    </span>
-                  </Link>
-                </DropdownMenuItem>
-              ))}
+            <DropdownMenuContent
+              className="w-80 max-w-[calc(100vw-1.5rem)]"
+              align="start"
+            >
+              <DropdownMenuLabel>Session details</DropdownMenuLabel>
+              <dl className="space-y-3 px-2 py-2 text-sm">
+                <div>
+                  <dt className="text-xs text-muted-foreground">Session</dt>
+                  <dd className="mt-1 break-words">
+                    {selected?.name ?? selected?.stepName ?? 'New session'}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">Project</dt>
+                  <dd className="mt-1 break-words">
+                    {data.project?.name ?? 'No project'}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">
+                    Working folder
+                  </dt>
+                  <dd className="mt-1 break-all font-mono text-xs leading-relaxed">
+                    {workingDirectory || 'Choose a working folder'}
+                  </dd>
+                </div>
+              </dl>
             </DropdownMenuContent>
           </DropdownMenu>
           <span className="hidden truncate text-xs text-muted-foreground sm:block">
             {selected?.agentName ?? providerName}
           </span>
+          {selected && (
+            <StatusBadge
+              status={
+                selected.activity ??
+                (selected.transport === 'chat' ? 'ready' : 'terminal')
+              }
+            />
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <DropdownMenu>
@@ -412,6 +405,13 @@ export default function Session() {
                   <SquarePen className="size-4" />
                   Rename session
                 </DropdownMenuItem>
+                <DropdownMenuItem
+                  variant="destructive"
+                  onSelect={() => setDeleting(true)}
+                >
+                  <Trash2 className="size-4" />
+                  Delete session
+                </DropdownMenuItem>
                 {selected.transport === 'chat' && (
                   <DropdownMenuItem
                     onSelect={() =>
@@ -453,53 +453,12 @@ export default function Session() {
           onClose={() => setRenaming(false)}
         />
       )}
-      {selected && (
-        <control.Form
-          method="post"
-          className="mx-auto flex w-full max-w-3xl items-center gap-2 px-3 py-1 sm:px-4"
-        >
-          <input type="hidden" name="sessionId" value={selected.id} />
-          <Label htmlFor="session-project" className="shrink-0 text-xs">
-            Project
-          </Label>
-          <NativeSelect
-            key={`${selected.id}:${selected.projectId}`}
-            id="session-project"
-            name="projectId"
-            defaultValue={selected.projectId ?? ''}
-            disabled={
-              !['exited', 'interrupted'].includes(selected.status) ||
-              control.state !== 'idle'
-            }
-          >
-            <option value="">No project</option>
-            {data.projects.map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.name}
-              </option>
-            ))}
-          </NativeSelect>
-          <Button
-            name="intent"
-            value="assign-project"
-            size="sm"
-            variant="ghost"
-            disabled={
-              !['exited', 'interrupted'].includes(selected.status) ||
-              control.state !== 'idle'
-            }
-          >
-            Save
-          </Button>
-        </control.Form>
-      )}
-      {selected && (
-        <p
-          className="mx-auto w-full max-w-3xl truncate px-3 py-1 text-xs text-muted-foreground sm:px-4"
-          title={selected.workingDirectory}
-        >
-          {selected.workingDirectory}
-        </p>
+      {selected && deleting && (
+        <DeleteSessionDialog
+          session={selected}
+          redirectToList
+          onClose={() => setDeleting(false)}
+        />
       )}
       {(control.data?.error || data.queuedSessionCount > 0) && (
         <p
@@ -521,9 +480,9 @@ export default function Session() {
               ? ` · ${(selected.stepIndex ?? 0) + 1}. ${selected.stepName}`
               : ''}{' '}
             ·{' '}
-            {selected.status === 'queued'
-              ? 'Queued'
-              : (selected.outcome ?? selected.status)}
+            {selected.outcome
+              ? selected.outcome.replaceAll('_', ' ')
+              : 'Scheduled session'}
             {selected.scheduledFor
               ? ` · ${new Date(selected.scheduledFor).toLocaleString()}`
               : ''}

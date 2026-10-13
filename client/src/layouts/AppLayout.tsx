@@ -25,7 +25,6 @@ const navigationItems: { to: string; label: string; icon: IconName }[] = [
   { to: '/agents', label: 'Agents', icon: 'agent' },
   { to: '/skills', label: 'Skills', icon: 'skills' },
 ];
-export type AppOutletContext = { toggleNavigation: () => void };
 export default function AppLayout() {
   const location = useLocation();
   const navigation = useNavigation();
@@ -150,7 +149,7 @@ export default function AppLayout() {
               className="absolute inset-x-0 top-0 z-50 h-0.5 animate-pulse bg-foreground/40 motion-reduce:animate-none"
             />
           )}
-          <Outlet context={{ toggleNavigation } satisfies AppOutletContext} />
+          <Outlet />
         </div>
         <nav
           aria-label="Mobile navigation"

@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Pencil } from 'lucide-react';
+import { Pencil, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import RenameSessionDialog from './RenameSessionDialog';
+import DeleteSessionDialog from './DeleteSessionDialog';
 import { Link } from 'react-router';
 import type { Session } from '../types/session';
 import type { Project } from '../lib/projects';
@@ -15,6 +16,7 @@ export default function SessionList({
   projects: Project[];
 }) {
   const [renaming, setRenaming] = useState<Session | null>(null);
+  const [deleting, setDeleting] = useState<Session | null>(null);
   return sessions.length ? (
     <>
       <ul className="space-y-3">
@@ -38,7 +40,12 @@ export default function SessionList({
                   </h3>
                   <p className="mt-1 text-xs text-muted-foreground">
                     {project?.name ?? 'No project'} ·{' '}
-                    {session.source === 'schedule' ? 'Scheduled' : 'Live'} ·{' '}
+                    {session.source === 'schedule'
+                      ? 'Scheduled'
+                      : session.transport === 'terminal'
+                        ? 'Terminal'
+                        : 'Chat'}{' '}
+                    ·{' '}
                     {new Date(
                       session.lastResumedAt ??
                         session.scheduledFor ??
@@ -59,9 +66,8 @@ export default function SessionList({
                 </div>
                 <StatusBadge
                   status={
-                    ['running', 'queued', 'stopping'].includes(session.status)
-                      ? session.status
-                      : (session.outcome ?? session.status)
+                    session.activity ??
+                    (session.transport === 'chat' ? 'ready' : 'terminal')
                   }
                 />
                 <Icon name="arrow" className="text-muted-foreground" />
@@ -75,6 +81,16 @@ export default function SessionList({
               >
                 <Pencil className="size-4" />
               </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={`Delete ${session.name ?? 'session'}`}
+                title="Delete session"
+                className="text-destructive hover:text-destructive"
+                onClick={() => setDeleting(session)}
+              >
+                <Trash2 className="size-4" />
+              </Button>
             </li>
           );
         })}
@@ -83,6 +99,14 @@ export default function SessionList({
         <RenameSessionDialog
           session={renaming}
           onClose={() => setRenaming(null)}
+        />
+      )}
+      {deleting && (
+        <DeleteSessionDialog
+          session={
+            sessions.find((session) => session.id === deleting.id) ?? deleting
+          }
+          onClose={() => setDeleting(null)}
         />
       )}
     </>

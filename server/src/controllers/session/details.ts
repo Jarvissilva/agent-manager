@@ -7,13 +7,16 @@ import {
 } from '../../repositories/sessions.js';
 import { findProject } from '../../repositories/projects.js';
 import { positiveId, RequestError, textField } from '../../lib/http/errors.js';
-import { getSessionById } from '../../services/sessions.js';
+import {
+  getSessionById,
+  withSessionActivity,
+} from '../../services/sessions.js';
 
 export function getSavedSession(request: Request, response: Response) {
   const row = findSessionById(String(request.params.sessionId));
   const session = row ? findSavedSession(row.projectId, row.id) : undefined;
   if (!session) throw new RequestError(404, 'Session not found.');
-  response.json(session);
+  response.json(withSessionActivity(session));
 }
 export function updateSessionDetails(request: Request, response: Response) {
   const row = findSessionById(String(request.params.sessionId));
@@ -26,7 +29,7 @@ export function updateSessionDetails(request: Request, response: Response) {
     const updated = renameSession(session.id, name);
     const runtime = getSessionById(session.id);
     if (runtime) runtime.info.name = name;
-    response.json(updated);
+    response.json(withSessionActivity(updated));
     return;
   }
   if (!['exited', 'interrupted'].includes(session.status))
@@ -45,5 +48,5 @@ export function updateSessionDetails(request: Request, response: Response) {
   const updated = updateSessionProject(session.id, projectId);
   const runtime = getSessionById(session.id);
   if (runtime) runtime.info.projectId = projectId;
-  response.json(updated);
+  response.json(withSessionActivity(updated));
 }

@@ -70,9 +70,14 @@ export default defineConfig([
     },
   },
   {
+    files: ['skills/**/*.mjs'],
+    extends: [js.configs.recommended],
+  },
+  {
     files: [
       'server/src/**/*.ts',
       'server/tests/**/*.mjs',
+      'skills/**/*.mjs',
       'client/vite.config.ts',
       '*.mjs',
     ],

@@ -11,6 +11,9 @@ import {
 import { cn } from '@/lib/utils';
 
 const statusLabels: Record<string, string> = {
+  ready: 'Ready',
+  needs_input: 'Needs input',
+  error: 'Error',
   running: 'Running',
   queued: 'Queued',
   stopping: 'Stopping',

@@ -1,7 +1,11 @@
 import type { Request, Response } from 'express';
 import { database } from '../../lib/database.js';
 import { isAllowedOrigin } from '../../lib/security/requestOrigin.js';
-import { getSession, stopSession } from '../../services/sessions.js';
+import {
+  getSession,
+  stopSession,
+  withSessionActivity,
+} from '../../services/sessions.js';
 import {
   listSessions,
   queuedSessionCount,
@@ -35,9 +39,10 @@ function getProject(request: Request, response: Response) {
 export function getProjectSession(request: Request, response: Response) {
   const project = getProject(request, response);
   if (!project) return;
+  const runtime = getSession(project.id);
   response.json({
-    session: getSession(project.id)?.info ?? null,
-    sessions: listSessions(project.id),
+    session: runtime ? withSessionActivity(runtime.info) : null,
+    sessions: listSessions(project.id).map(withSessionActivity),
     queuedSessionCount: queuedSessionCount(project.id),
   });
 }
@@ -47,5 +52,7 @@ export function stopProjectSession(request: Request, response: Response) {
   if (!project) return;
   const session = getSession(project.id);
   if (session) stopSession(session);
-  response.json({ session: session?.info ?? null });
+  response.json({
+    session: session ? withSessionActivity(session.info) : null,
+  });
 }

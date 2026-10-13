@@ -7,6 +7,7 @@ import {
   updateSessionDetails,
 } from './controllers/session/details.js';
 import createSession from './controllers/session/createSession.js';
+import deleteSession from './controllers/session/deleteSession.js';
 import { Router } from 'express';
 import {
   getChat,
@@ -90,6 +91,7 @@ router.get('/sessions', getSessions);
 router.post('/sessions', localWrite, createSession);
 router.get('/sessions/:sessionId', getSavedSession);
 router.patch('/sessions/:sessionId', localWrite, updateSessionDetails);
+router.delete('/sessions/:sessionId', localWrite, deleteSession);
 router.post('/sessions/:sessionId/resume', localWrite, createSession);
 router.get('/sessions/:sessionId/chat', getChat);
 router.post('/sessions/:sessionId/messages', localWrite, postMessage);

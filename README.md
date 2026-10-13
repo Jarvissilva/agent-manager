@@ -19,7 +19,17 @@ Desktop navigation uses a narrow sidebar with Home, Sessions, Scheduled, Project
 Projects are optional collections: start directly at `/sessions/new` and choose a folder,
 provider, and optional agent/project. Conversations use `/sessions/:sessionId`.
 The composer contains model, reasoning, provider, and file access settings.
+Codex and Antigravity also offer a Plan toggle in the composer. Off uses normal
+execution; on uses the provider’s native planning behavior. Turn Plan off before
+asking for implementation. Mode changes apply to the next message and are saved with
+the chat settings for resume. OpenCode does not expose this control yet.
 Projects (`/projects`) provides a searchable list with inline name editing and deletion. Deleting a project with sessions requires choosing to keep them under No project or delete their saved records and messages. End running sessions before deleting their records; keeping sessions preserves running processes. Schedules are kept under No project. Projects have no individual overview pages; sessions and schedules live in their global lists. Home (`/`) starts a chat directly with an optional project, provider, and working folder, and lists running/stopping sessions with live refresh.
+Sessions can be deleted from their list or options menu after confirmation.
+Deletion removes Agent Manager history and messages, including legacy resume
+aliases, and leaves project files and native provider conversations intact.
+Running/stopping sessions must end and queued sessions must be cancelled first.
+History for an unfinished multi-session scheduled execution is protected until
+all its sessions finish.
 Older project chat and schedule URLs redirect to the canonical global routes.
 
 ## Development
@@ -354,6 +364,10 @@ converts existing schedules into one-step definitions, and preserves historical 
 
 No Redis or separate worker is required.
 
+Individual session deletion uses `DELETE /api/sessions/:sessionId`: `204` on
+success, `404` when missing, or `409` while the session or dependent scheduled
+execution is unfinished. Trusted-origin checks also apply.
+
 ## Production with PM2 and private Tailscale access
 
 The production server serves `client/dist`, the API, and chat/terminal WebSockets
@@ -431,3 +445,94 @@ pnpm --filter @agent-manager/server test
 Use `pnpm format` to format the repository. After building, use
 `pnpm --filter @agent-manager/client preview` to preview the client and
 `pnpm --filter @agent-manager/server start` to run the compiled server.
+
+## Analytics skills
+
+Reusable read-only skills live in `skills/google-search-console`,
+`skills/google-analytics`, and `skills/bing-webmaster`. Each includes `SKILL.md`,
+Node.js 24 scripts, presets, and helpers for custom API queries. Register their
+absolute folders through the existing Skills import flow. Imported skills are
+edited in the repository; native discovery is handled by Agent Manager.
+
+Google scripts use installed `gcloud` with impersonated Application Default
+Credentials and per-service read-only scopes. Bing reads
+`BING_WEBMASTER_API_KEY` from the environment or
+`~/.config/agent-manager/credentials.env`; keep that file outside Git with mode 600. No PM2 environment change is needed for this fallback.
+
+Run `node <skill-folder>/scripts/report.mjs --help` for commands. GA4 can discover accessible properties with `--report properties` and inspect
+website URLs with `--property ID --report streams`; discovery requires the
+Google Analytics Admin API in addition to the Data API. Reports support explicit dates, custom JSON requests, and
+new output files via `--output`. Check returned warnings: Search Console has
+privacy/top-row limits, GA4 can apply thresholding or sampling, and Bing dates
+can label aggregate buckets with fixed server-side history.
+
+Validate the retrieval scripts with
+`pnpm --filter '@agent-manager/skill-*' test`.
+
+## Google Cloud skill
+
+`skills/gcloud` is an instruction-only skill for managing Google Cloud through the
+installed CLI. Import its folder using the existing Skills flow and attach it to
+agents that need cloud operations. It covers explicit project/identity selection,
+resource inspection, requested changes, and verification. It uses existing CLI
+authentication; analytics ADC credentials remain separate. No wrapper scripts,
+extra dependencies, or infrastructure permissions are installed by this skill.
+
+## Traffic Analyst agent
+
+`agents/traffic-analyst.md` is the maintained instruction source for the Traffic
+Analyst agent. It uses Codex with `google-search-console`, `google-analytics`, and
+`bing-webmaster` attached through the existing agent skill assignments. It
+discovers website properties, investigates traffic changes and on-site outcomes,
+and produces evidence-backed reports with prioritized actions. Missing sources
+are disclosed without blocking analysis of available data.
+
+The configured agent stores a snapshot of these instructions in the database;
+editing this file does not automatically update it, and editing the agent in the
+UI does not update this file. Keep them synchronized when changing the agent.
+For example, select Traffic Analyst when creating a session and ask:
+“Analyze traffic for example.com over the last 28 complete days. Explain the
+main changes and prioritize opportunities to improve qualified traffic.”
+
+The workflow draws inspiration from Anthropic's published
+[analysis](https://github.com/anthropics/knowledge-work-plugins/blob/main/data/skills/analyze/SKILL.md)
+and [validation](https://github.com/anthropics/knowledge-work-plugins/blob/main/data/skills/validate-data/SKILL.md)
+workflows, adapted to the existing analytics skills. No external plugin or MCP
+server is required.
+
+## Session permissions
+
+The chat composer's settings menu applies permissions to the next message and
+stores them with the session for resume. Existing sessions keep their defaults:
+project writes, Codex sandbox network disabled, and approvals on request.
+
+Codex exposes read-only, project-write, and full-access modes, a sandbox network
+switch, and on-request, untrusted-command, or never-ask approval policies.
+Full access disables both file and network sandbox restrictions. Never ask is
+independent: in a sandbox it denies actions requiring escalation instead of
+granting unrestricted access. The integration follows the installed Codex
+app-server protocol and [official documentation](https://developers.openai.com/codex/app-server).
+
+OpenCode exposes file/tool access and on-request or never-ask approvals through
+tool rules, not an OS or network sandbox. With project writes and Never ask,
+gated tools are denied; full access with Never ask allows all tools. Antigravity
+exposes on-request or never-ask approvals using its native permission bypass flag;
+separate file and network sandbox controls are not available in this integration.
+Unsupported combinations are rejected by the server. These options apply to chat
+sessions; terminal sessions continue to use their provider's native settings.
+
+## Session activity
+
+Session badges and filters show Ready, Running, Needs input, Error, or Queued.
+Running means a chat provider is generating a response or executing tools; an
+open provider process between replies is Ready. Pending approvals and questions
+show Needs input separately from Home's Running sessions. Failures and unexpected
+interruptions show Error; successful replies and intentional stops show Ready.
+Detailed scheduled outcomes remain in the session details.
+
+Session API responses include a derived `activity` field; the stored `status`
+continues to track provider lifecycle for resume, scheduling, and deletion
+protection. An interactive terminal has no reliable turn activity signal, so its
+activity is null, it displays Terminal, and it is excluded from chat activity
+filters and Home's running count. Activity uses existing chat events and list
+refreshes; no database migration is needed.

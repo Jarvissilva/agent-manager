@@ -34,15 +34,30 @@ function permissions(settings: ChatSettings, cwd: string) {
         effect: 'allow',
       })),
     ];
-  // Ask before commands, external tools and delegation; edits remain interactive.
+  // Without prompts, deny gated tools in workspace mode. Full access explicitly
+  // allows every tool; these are tool rules, not an OS or network sandbox.
   return [
-    { action: '*', resource: '*', effect: 'ask' },
+    {
+      action: '*',
+      resource: '*',
+      effect:
+        settings.approvalPolicy === 'never'
+          ? settings.permissions === 'danger-full-access'
+            ? 'allow'
+            : 'deny'
+          : 'ask',
+    },
     ...['read', 'glob', 'grep', 'skill'].map((action) => ({
       action,
       resource: '*',
       effect: 'allow',
     })),
-    { action: 'edit', resource: cwd + '/**', effect: 'allow' },
+    {
+      action: 'edit',
+      resource:
+        settings.permissions === 'danger-full-access' ? '*' : cwd + '/**',
+      effect: 'allow',
+    },
   ];
 }
 

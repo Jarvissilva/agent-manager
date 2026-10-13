@@ -128,6 +128,16 @@ test(
         ).status,
         400,
       );
+      assert.equal(
+        (
+          await request('POST', '/projects/1/session', {
+            provider: 'opencode',
+            transport: 'chat',
+            settings: { ...settings, mode: 'plan' },
+          })
+        ).status,
+        400,
+      );
       const skill = await (
         await request('POST', '/skills', {
           name: 'Review',
@@ -221,8 +231,38 @@ test(
       assert.ok(
         (await logs()).some((entry) => entry.path === '/api/location/reload'),
       );
-      const count = chat().items.size,
-        native = getSession(1).info.providerConversationId;
+      const native = getSession(1).info.providerConversationId;
+      for (const [permissions, approvalPolicy, expected] of [
+        ['danger-full-access', 'never', 'allow'],
+        ['danger-full-access', 'on-request', 'ask'],
+        ['workspace-write', 'never', 'deny'],
+        ['workspace-write', 'on-request', 'ask'],
+      ]) {
+        assert.equal(
+          (
+            await request('POST', `/sessions/${session.id}/messages`, {
+              prompt: 'hello',
+              settings: { ...settings, permissions, approvalPolicy },
+            })
+          ).status,
+          202,
+        );
+        await waitFor(() => chat().state === 'idle');
+        const patch = (await logs()).filter((x) => x.method === 'PATCH').at(-1);
+        assert.equal(patch.body.permissions[0].effect, expected);
+        assert.ok(
+          patch.body.permissions.some(
+            (rule) =>
+              rule.action === 'edit' &&
+              rule.resource ===
+                (permissions === 'danger-full-access'
+                  ? '*'
+                  : directory + '/**') &&
+              rule.effect === 'allow',
+          ),
+        );
+      }
+      const count = chat().items.size;
       await request('DELETE', '/projects/1/session');
       await waitFor(() => getSession(1).info.status === 'exited');
       const resumed = await request('POST', '/projects/1/session', {

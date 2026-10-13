@@ -134,7 +134,10 @@ process.stdin.on('data', data => { if (data.toString().includes('finish')) proce
       );
       assert.deepEqual(
         await (await request('GET', '/api/sessions?projectId=2')).json(),
-        JSON.parse(JSON.stringify(listSessions(2))),
+        JSON.parse(JSON.stringify(listSessions(2))).map((session) => ({
+          ...session,
+          activity: null,
+        })),
       );
       assert.deepEqual(
         await (await request('GET', '/api/sessions?projectId=999')).json(),

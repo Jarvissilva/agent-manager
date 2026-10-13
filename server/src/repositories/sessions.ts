@@ -175,6 +175,23 @@ export function findSessionById(id: string) {
   return row ? sessionRow(row) : undefined;
 }
 
+export function sessionAliases(id: string) {
+  return database
+    .prepare(
+      `WITH RECURSIVE aliases(id) AS (SELECT ? UNION SELECT sessions.id FROM sessions JOIN aliases ON sessions.resumedFrom=aliases.id) SELECT sessions.* FROM sessions JOIN aliases ON sessions.id=aliases.id`,
+    )
+    .all(id)
+    .map(sessionRow);
+}
+
+export function deleteSessionRecords(id: string) {
+  database
+    .prepare(
+      `WITH RECURSIVE aliases(id) AS (SELECT ? UNION SELECT sessions.id FROM sessions JOIN aliases ON sessions.resumedFrom=aliases.id) DELETE FROM sessions WHERE id IN (SELECT id FROM aliases)`,
+    )
+    .run(id);
+}
+
 export function findSavedSession(projectId: number | null, id: string) {
   const find = database.prepare(
     'SELECT * FROM sessions WHERE projectId IS ? AND id = ?',

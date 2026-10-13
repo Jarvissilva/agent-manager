@@ -1,4 +1,5 @@
 import { skillInstructions } from './skills.js';
+import { sessionActivity } from '../lib/sessionActivity.js';
 import { OpenCodeChatSession } from './opencodeChat.js';
 import { randomUUID } from 'node:crypto';
 import { ChatSession } from './chat.js';
@@ -14,9 +15,15 @@ import {
   saveSession,
   listUnfinishedSessions,
   recoverSessionHistory,
+  findSessionById,
+  findSavedSession,
+  sessionAliases,
+  deleteSessionRecords,
+  occurrenceSessions,
   type SessionInfo,
 } from '../repositories/sessions.js';
 import type { Agent } from './agents.js';
+import { RequestError } from '../lib/http/errors.js';
 import {
   createCodexLogDirectory,
   readCodexConversationId,
@@ -89,6 +96,46 @@ export function getSession(projectId: number) {
 
 export function getSessionById(id: string) {
   return sessions.get(id);
+}
+
+export function withSessionActivity(info: SessionInfo) {
+  const runtime = getSessionById(info.id);
+  return {
+    ...info,
+    activity: sessionActivity(runtime?.info ?? info, runtime?.chat),
+  };
+}
+
+export function deleteSession(id: string) {
+  const row = findSessionById(id);
+  const saved = row ? findSavedSession(row.projectId, row.id) : undefined;
+  if (!saved) throw new RequestError(404, 'Session not found.');
+  const aliases = sessionAliases(saved.id);
+  for (const session of aliases) {
+    if (
+      !['exited', 'interrupted'].includes(session.status) ||
+      (sessions.has(session.id) &&
+        !['exited', 'interrupted'].includes(
+          sessions.get(session.id)!.info.status,
+        ))
+    )
+      throw new RequestError(
+        409,
+        'End running sessions or cancel queued sessions before deleting them.',
+      );
+    if (
+      session.occurrenceId &&
+      occurrenceSessions(session.occurrenceId).some((step) =>
+        ['queued', 'running', 'stopping'].includes(step.status),
+      )
+    )
+      throw new RequestError(
+        409,
+        'Wait for all sessions in this scheduled execution to finish before deleting its history.',
+      );
+  }
+  deleteSessionRecords(saved.id);
+  for (const session of aliases) sessions.delete(session.id);
 }
 
 export function detachProject(projectId: number, deleteSessions: boolean) {
@@ -190,10 +237,19 @@ export function startSession(
     const session: Session = { info, events: new EventEmitter(), output: '' };
     sessions.set(info.id, session);
     const onClose = (exitCode: number | null) => {
+      const stopped = info.status === 'stopping';
       signalSession(session, 'SIGKILL');
       clearTimeout(session.killTimer);
       info.status = 'exited';
       info.exitCode = exitCode;
+      if (info.source !== 'schedule') {
+        info.error = stopped ? null : (session.chat?.error ?? null);
+        info.outcome = stopped
+          ? 'cancelled'
+          : info.error || exitCode
+            ? 'failed'
+            : null;
+      }
       info.endedAt = new Date().toISOString();
       saveSession(info);
       session.events.emit('exit', info);
@@ -204,6 +260,20 @@ export function startSession(
         : provider === 'antigravity'
           ? new AntigravityChatSession(info, cwd, onClose)
           : new ChatSession(info, cwd, onClose);
+    session.chat.events.on(
+      'change',
+      (event: { type: string; error?: string | null; state?: string }) => {
+        if (event.type !== 'state') return;
+        const error =
+          info.status === 'stopping' && event.state === 'closed'
+            ? null
+            : (event.error ?? null);
+        if (info.error !== error) {
+          info.error = error;
+          saveSession(info);
+        }
+      },
+    );
     if (session.chat instanceof ChatSession)
       session.process = session.chat.rpc.child;
     return session;

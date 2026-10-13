@@ -9,6 +9,7 @@ import {
   getSession,
   getSessionById,
   startSession,
+  withSessionActivity,
 } from '../../services/sessions.js';
 import {
   findSavedSession,
@@ -178,6 +179,11 @@ export default async function createSession(
       request.body?.settings !== undefined
         ? await validateChatSettings(request.body.settings, provider, directory)
         : undefined;
+    if (resume && !findSessionById(resume.id))
+      throw new RequestError(
+        404,
+        'This session was deleted while resuming it.',
+      );
     if (projectId !== null && !findProject(projectId))
       throw new RequestError(
         409,
@@ -193,7 +199,7 @@ export default async function createSession(
       provider,
     );
     if (session.chat) await session.chat.ready;
-    response.status(201).json({ session: session.info });
+    response.status(201).json({ session: withSessionActivity(session.info) });
   } catch (error) {
     if (error instanceof RequestError) {
       response.status(error.status).json({ error: error.message });

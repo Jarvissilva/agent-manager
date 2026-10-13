@@ -17,6 +17,9 @@ export async function validateChatSettings(
     throw new RequestError(400, 'Invalid chat settings.');
   const settings = value as Record<string, unknown>;
   if (
+    (settings.mode !== undefined &&
+      settings.mode !== 'default' &&
+      settings.mode !== 'plan') ||
     (settings.model !== null &&
       (typeof settings.model !== 'string' ||
         !settings.model ||
@@ -24,16 +27,51 @@ export async function validateChatSettings(
     (settings.effort !== null &&
       (typeof settings.effort !== 'string' || settings.effort.length > 30)) ||
     (settings.permissions !== 'read-only' &&
-      settings.permissions !== 'workspace-write')
+      settings.permissions !== 'workspace-write' &&
+      settings.permissions !== 'danger-full-access') ||
+    (settings.networkAccess !== undefined &&
+      typeof settings.networkAccess !== 'boolean') ||
+    (settings.approvalPolicy !== undefined &&
+      settings.approvalPolicy !== 'on-request' &&
+      settings.approvalPolicy !== 'untrusted' &&
+      settings.approvalPolicy !== 'never')
   )
     throw new RequestError(
       400,
-      'Choose valid model, reasoning and file access settings.',
+      'Choose valid model, reasoning and permission settings.',
     );
+  if (provider === 'opencode' && settings.mode === 'plan')
+    throw new RequestError(400, 'Plan mode is not supported for OpenCode yet.');
   if (provider === 'antigravity' && settings.permissions === 'read-only')
     throw new RequestError(
       400,
       'Antigravity does not expose a read-only file sandbox. Choose Edit project files or use Codex for read-only sessions.',
+    );
+  if (
+    provider === 'antigravity' &&
+    settings.permissions === 'danger-full-access'
+  )
+    throw new RequestError(
+      400,
+      'Antigravity does not expose a separate full-access sandbox mode. Use its approval policy instead.',
+    );
+  if (provider !== 'codex' && settings.networkAccess !== undefined)
+    throw new RequestError(
+      400,
+      'Network sandbox controls are only supported by Codex.',
+    );
+  if (provider !== 'codex' && settings.approvalPolicy === 'untrusted')
+    throw new RequestError(
+      400,
+      'Trusted-command approvals are only supported by Codex.',
+    );
+  if (
+    settings.permissions === 'danger-full-access' &&
+    settings.networkAccess === false
+  )
+    throw new RequestError(
+      400,
+      'Full access includes network access. Choose a sandboxed mode to disable it.',
     );
   let selectedModel = settings.model as string | null;
   let effort = settings.effort as string | null;
@@ -70,8 +108,20 @@ export async function validateChatSettings(
     effort ??= model.defaultReasoningEffort || null;
   }
   return {
+    ...(settings.mode !== undefined
+      ? { mode: settings.mode as 'default' | 'plan' }
+      : {}),
     model: selectedModel,
     effort,
     permissions: settings.permissions,
+    ...(settings.networkAccess !== undefined
+      ? { networkAccess: settings.networkAccess as boolean }
+      : {}),
+    ...(settings.approvalPolicy !== undefined
+      ? {
+          approvalPolicy:
+            settings.approvalPolicy as ChatSettings['approvalPolicy'],
+        }
+      : {}),
   };
 }

@@ -25,6 +25,7 @@ export type Session = {
   result: string | null;
   provider: 'codex' | 'antigravity' | 'opencode';
   status: 'queued' | 'running' | 'stopping' | 'exited' | 'interrupted';
+  activity: 'ready' | 'running' | 'needs_input' | 'error' | 'queued' | null;
   startedAt: string;
   lastResumedAt: string | null;
   providerConversationId?: string | null;

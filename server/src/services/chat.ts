@@ -204,7 +204,7 @@ export class ChatSession {
         ...(settings.effort
           ? { config: { model_reasoning_effort: settings.effort } }
           : {}),
-        approvalPolicy: 'on-request',
+        approvalPolicy: settings.approvalPolicy ?? 'on-request',
         approvalsReviewer: 'user',
         developerInstructions: this.info.agentInstructions,
       },
@@ -396,21 +396,37 @@ export class ChatSession {
         });
         this.skillRevision = revision;
       }
+      const model = settings.model ?? this.info.chatSettings?.model;
+      if (!model) throw new RequestError(503, 'Codex did not resolve a model.');
       const result = await this.rpc.request('turn/start', {
         threadId: this.info.codexConversationId,
+        approvalPolicy: settings.approvalPolicy ?? 'on-request',
         input: codexSkillInput(prompt, mentionedSkills(prompt)),
+        collaborationMode: {
+          mode: settings.mode ?? 'default',
+          settings: {
+            model,
+            reasoning_effort: settings.effort,
+            developer_instructions: null,
+          },
+        },
         ...(settings.model ? { model: settings.model } : {}),
         ...(settings.effort ? { effort: settings.effort } : {}),
         sandboxPolicy:
-          settings.permissions === 'read-only'
-            ? { type: 'readOnly', networkAccess: false }
-            : {
-                type: 'workspaceWrite',
-                writableRoots: [],
-                networkAccess: false,
-                excludeTmpdirEnvVar: false,
-                excludeSlashTmp: false,
-              },
+          settings.permissions === 'danger-full-access'
+            ? { type: 'dangerFullAccess' }
+            : settings.permissions === 'read-only'
+              ? {
+                  type: 'readOnly',
+                  networkAccess: settings.networkAccess ?? false,
+                }
+              : {
+                  type: 'workspaceWrite',
+                  writableRoots: [],
+                  networkAccess: settings.networkAccess ?? false,
+                  excludeTmpdirEnvVar: false,
+                  excludeSlashTmp: false,
+                },
       });
       this.info.chatSettings = settings;
       saveSession(this.info);

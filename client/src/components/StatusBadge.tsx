@@ -8,9 +8,13 @@ export default function StatusBadge({ status }: { status: string }) {
     'completed',
     'connected',
   ].includes(status);
-  const error = ['failed', 'timed_out', 'not found', 'disconnected'].includes(
-    status,
-  );
+  const error = [
+    'error',
+    'failed',
+    'timed_out',
+    'not found',
+    'disconnected',
+  ].includes(status);
   const working = ['running', 'cancelling', 'queued', 'starting'].includes(
     status,
   );
@@ -22,6 +26,8 @@ export default function StatusBadge({ status }: { status: string }) {
         success && 'bg-emerald-400/10 text-emerald-300',
         error && 'bg-destructive/10 text-destructive',
         working && 'bg-amber-300/10 text-amber-200',
+        status === 'needs_input' &&
+          'bg-amber-500/15 text-amber-700 dark:text-amber-300',
       )}
     >
       <span
@@ -30,7 +36,16 @@ export default function StatusBadge({ status }: { status: string }) {
           status === 'running' && 'animate-pulse motion-reduce:animate-none',
         )}
       />
-      {status.replaceAll('_', ' ')}
+      {(
+        {
+          ready: 'Ready',
+          running: 'Running',
+          needs_input: 'Needs input',
+          error: 'Error',
+          queued: 'Queued',
+          terminal: 'Terminal',
+        } as Record<string, string>
+      )[status] ?? status.replaceAll('_', ' ')}
     </Badge>
   );
 }

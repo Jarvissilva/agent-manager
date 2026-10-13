@@ -22,8 +22,10 @@ export function executeAntigravity(
     '--output-format',
     'stream-json',
     '--mode',
-    'accept-edits',
+    options.settings.mode === 'plan' ? 'plan' : 'accept-edits',
   ];
+  if (options.settings.approvalPolicy === 'never')
+    args.push('--dangerously-skip-permissions');
   if (options.conversationId)
     args.push('--conversation', options.conversationId);
   if (options.settings.model) args.push('--model', options.settings.model);

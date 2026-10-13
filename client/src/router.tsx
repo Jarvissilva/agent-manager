@@ -2,6 +2,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { createBrowserRouter, redirect } from 'react-router';
 import Home, { homeLoader } from './pages/Home';
 import { homeAction } from './actions/homeAction';
+import { sessionListAction } from './actions/sessionListAction';
 import Sessions, { sessionsLoader } from './pages/Sessions';
 import Schedules, { schedulesLoader } from './pages/Schedules';
 import AppLayout, { projectsLoader } from './layouts/AppLayout';
@@ -62,7 +63,12 @@ const router = createBrowserRouter([
       },
       { index: true, Component: Home, loader: homeLoader, action: homeAction },
       { path: 'home', loader: () => redirect('/') },
-      { path: 'sessions', Component: Sessions, loader: sessionsLoader },
+      {
+        path: 'sessions',
+        Component: Sessions,
+        loader: sessionsLoader,
+        action: sessionListAction,
+      },
       {
         path: 'sessions/new',
         Component: Session,

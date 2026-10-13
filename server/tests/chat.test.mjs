@@ -213,6 +213,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
       });
       assert.equal(start.status, 201);
       const { session } = await start.json();
+      assert.equal(session.activity, 'ready');
       assert.equal(session.transport, 'chat');
       assert.equal(session.codexConversationId, threadId);
       const chat = getSession(1).chat;
@@ -256,6 +257,10 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
           prompt,
           settings,
         });
+      const activity = async () =>
+        (await (await request('GET', `/sessions/${session.id}`)).json())
+          .activity;
+      assert.equal(await activity(), 'ready');
       assert.equal(
         (
           await send('bad settings', {
@@ -269,6 +274,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
       assert.equal(
         (
           await send('hello', {
+            mode: 'plan',
             model: 'fixture-b',
             effort: 'medium',
             permissions: 'workspace-write',
@@ -280,9 +286,18 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
       const turn = JSON.parse(
         await readFile(join(directory, 'turn.json'), 'utf8'),
       );
+      assert.equal(turn.collaborationMode.mode, 'plan');
+      assert.equal(turn.collaborationMode.settings.model, 'fixture-b');
+      assert.equal(turn.collaborationMode.settings.reasoning_effort, 'medium');
+      assert.equal(
+        turn.collaborationMode.settings.developer_instructions,
+        null,
+      );
       assert.equal(turn.model, 'fixture-b');
       assert.equal(turn.effort, 'medium');
       assert.equal(turn.sandboxPolicy.type, 'workspaceWrite');
+      assert.equal(turn.sandboxPolicy.networkAccess, false);
+      assert.equal(turn.approvalPolicy, 'on-request');
       assert.deepEqual(
         JSON.parse(
           database
@@ -290,6 +305,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
             .get(session.id).chatSettings,
         ),
         {
+          mode: 'plan',
           model: 'fixture-b',
           effort: 'medium',
           permissions: 'workspace-write',
@@ -312,17 +328,25 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
       assert.equal(reconnected.events[0].items.length, chat.items.size);
       assert.equal((await send('wait')).status, 202);
       await waitFor(() => chat.turnId);
+      assert.equal(await activity(), 'running');
+      const activeList = await (await request('GET', '/sessions')).json();
+      assert.equal(
+        activeList.find((s) => s.id === session.id).activity,
+        'running',
+      );
       assert.equal((await send('duplicate')).status, 409);
       assert.equal(
         (await request('POST', `/sessions/${session.id}/interrupt`, {})).status,
         200,
       );
       await waitFor(() => chat.state === 'idle');
+      assert.equal(await activity(), 'ready');
       assert.ok(
         [...chat.items.values()].some((i) => i.text === 'Partial response'),
       );
       assert.equal((await send('approve')).status, 202);
       await waitFor(() => chat.requests.size === 1);
+      assert.equal(await activity(), 'needs_input');
       assert.equal(
         chat.snapshot().requests[0].detail,
         'echo approved\nFixture approval',
@@ -367,6 +391,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
       assert.ok([...chat.items.values()].some((i) => i.text === 'Declined'));
       assert.equal((await send('question')).status, 202);
       await waitFor(() => chat.requests.size === 1);
+      assert.equal(await activity(), 'needs_input');
       assert.equal(
         (
           await request('POST', `/sessions/${session.id}/requests/question-1`, {
@@ -390,6 +415,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
       assert.equal(chat.turnId, null);
       assert.equal((await send('reject')).status, 502);
       assert.equal(chat.state, 'idle');
+      assert.equal(await activity(), 'error');
       const skill = await (
         await request('POST', '/skills', {
           name: 'Release',
@@ -412,6 +438,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
       const count = chat.items.size;
       await request('DELETE', '/projects/1/session');
       await waitFor(() => getSession(1).info.status === 'exited');
+      assert.equal(await activity(), 'ready');
       const resumed = await request('POST', '/projects/1/session', {
         transport: 'chat',
         resumeSessionId: session.id,
@@ -420,6 +447,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
       assert.equal((await resumed.json()).session.id, session.id);
       const resumedChat = getSession(1).chat;
       assert.deepEqual(resumedChat.info.chatSettings, {
+        mode: 'plan',
         model: 'fixture-b',
         effort: 'medium',
         permissions: 'workspace-write',
@@ -432,12 +460,106 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
         1,
       );
       assert.equal(listSessionItems(session.id).length, count);
+      assert.equal(
+        (
+          await send('fast', {
+            ...resumedChat.info.chatSettings,
+            mode: 'invalid',
+          })
+        ).status,
+        400,
+      );
+      assert.equal(
+        (
+          await send('fast', {
+            ...resumedChat.info.chatSettings,
+            mode: 'default',
+          })
+        ).status,
+        202,
+      );
+      assert.equal(
+        JSON.parse(await readFile(join(directory, 'turn.json'), 'utf8'))
+          .collaborationMode.mode,
+        'default',
+      );
+      const fullSettings = {
+        model: 'fixture-b',
+        effort: 'medium',
+        permissions: 'danger-full-access',
+        networkAccess: true,
+        approvalPolicy: 'never',
+      };
+      assert.equal((await send('fast', fullSettings)).status, 202);
+      let permissionTurn = JSON.parse(
+        await readFile(join(directory, 'turn.json'), 'utf8'),
+      );
+      assert.deepEqual(permissionTurn.sandboxPolicy, {
+        type: 'dangerFullAccess',
+      });
+      assert.equal(permissionTurn.approvalPolicy, 'never');
+      await request('DELETE', '/projects/1/session');
+      await waitFor(() => getSession(1).info.status === 'exited');
+      assert.equal(
+        (
+          await request('POST', '/projects/1/session', {
+            transport: 'chat',
+            resumeSessionId: session.id,
+          })
+        ).status,
+        201,
+      );
+      const permissionLaunch = JSON.parse(
+        await readFile(join(directory, 'launch.json'), 'utf8'),
+      );
+      assert.equal(permissionLaunch.params.sandbox, 'danger-full-access');
+      assert.equal(permissionLaunch.params.approvalPolicy, 'never');
+      assert.deepEqual(getSession(1).chat.info.chatSettings, fullSettings);
+      for (const networkAccess of [true, false]) {
+        assert.equal(
+          (
+            await send('fast', {
+              ...fullSettings,
+              permissions: 'read-only',
+              networkAccess,
+              approvalPolicy: 'untrusted',
+            })
+          ).status,
+          202,
+        );
+        permissionTurn = JSON.parse(
+          await readFile(join(directory, 'turn.json'), 'utf8'),
+        );
+        assert.deepEqual(permissionTurn.sandboxPolicy, {
+          type: 'readOnly',
+          networkAccess,
+        });
+        assert.equal(permissionTurn.approvalPolicy, 'untrusted');
+      }
+      assert.equal(
+        (
+          await send('fast', {
+            ...fullSettings,
+            permissions: 'workspace-write',
+            approvalPolicy: 'on-request',
+          })
+        ).status,
+        202,
+      );
+      permissionTurn = JSON.parse(
+        await readFile(join(directory, 'turn.json'), 'utf8'),
+      );
+      assert.equal(permissionTurn.sandboxPolicy.type, 'workspaceWrite');
+      assert.equal(permissionTurn.sandboxPolicy.networkAccess, true);
+      assert.equal(permissionTurn.approvalPolicy, 'on-request');
+      const finalChat = getSession(1).chat;
       assert.equal((await send('crash')).status, 202);
       await waitFor(() => getSession(1).info.status === 'exited');
-      assert.equal(resumedChat.state, 'closed');
-      assert.ok(resumedChat.error);
+      assert.equal(finalChat.state, 'closed');
+      assert.equal(await activity(), 'error');
+      assert.ok(finalChat.error);
       assert.ok(
-        [...resumedChat.items.values()].some((i) => i.status === 'interrupted'),
+        [...finalChat.items.values()].some((i) => i.status === 'interrupted'),
       );
       const saved = await stream(session.id);
       assert.equal(saved.events[0].state, 'closed');

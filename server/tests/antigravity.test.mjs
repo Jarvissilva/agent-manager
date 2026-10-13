@@ -96,6 +96,7 @@ readline.createInterface({input:process.stdin}).once('line', line => {
       }
     };
     const settings = {
+      mode: 'plan',
       model: 'fixture-gemini',
       effort: 'high',
       permissions: 'workspace-write',
@@ -193,6 +194,7 @@ readline.createInterface({input:process.stdin}).once('line', line => {
         await readFile(join(directory, 'launch.json'), 'utf8'),
       );
       assert.equal(launch.input.event, 'user');
+      assert.equal(launch.args[launch.args.indexOf('--mode') + 1], 'plan');
       assert.match(launch.input.message.content, /review-3:/);
       assert.doesNotMatch(launch.input.message.content, /Check correctness/);
       assert.ok(!launch.args.includes('--disable-slash-commands'));
@@ -210,6 +212,7 @@ readline.createInterface({input:process.stdin}).once('line', line => {
       );
       const nextSettings = {
         ...settings,
+        approvalPolicy: 'never',
         model: 'fixture-claude',
         effort: 'max',
       };
@@ -234,6 +237,7 @@ readline.createInterface({input:process.stdin}).once('line', line => {
         launch.args[launch.args.indexOf('--model') + 1],
         'fixture-claude',
       );
+      assert.ok(launch.args.includes('--dangerously-skip-permissions'));
       assert.match(
         launch.input.message.content,
         /^\/review-3 next\n\nAgent instructions:/,
