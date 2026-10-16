@@ -1,4 +1,4 @@
-import { closeSync, mkdirSync, openSync, readSync, rmSync } from 'node:fs';
+import { closeSync, openSync, readSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { databasePath } from '../../database.js';
 
@@ -7,12 +7,6 @@ export const conversationIdPattern =
 
 export function codexLogDirectory(sessionId: string) {
   return join(dirname(databasePath), 'codex-logs', sessionId);
-}
-
-export function createCodexLogDirectory(sessionId: string) {
-  const directory = codexLogDirectory(sessionId);
-  mkdirSync(directory, { recursive: true, mode: 0o700 });
-  return directory;
 }
 
 export function readCodexConversationId(sessionId: string) {

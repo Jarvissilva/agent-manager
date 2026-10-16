@@ -71,6 +71,12 @@ export default function Agents() {
               >
                 Edit agent
               </Link>
+              <Link
+                to={`/usage?agentId=${agent.id}`}
+                className="text-xs font-medium underline-offset-4 hover:underline"
+              >
+                View usage
+              </Link>
             </li>
           ))}
         </ul>

@@ -38,7 +38,18 @@ const finish = (text, status = 'completed') => {
 };
 readline.createInterface({ input: process.stdin }).on('line', (line) => {
   const m = JSON.parse(line);
+  fs.appendFileSync('codex-requests.jsonl', JSON.stringify(m) + '\n');
+  history = fs.existsSync(file)
+    ? JSON.parse(fs.readFileSync(file, 'utf8'))
+    : history;
   if (m.method === 'initialize') result(m.id, {});
+  else if (m.method === 'thread/read')
+    result(m.id, {
+      thread: {
+        id: '12345678-1234-5678-9012-123456789012',
+        historyMode: 'paginated',
+      },
+    });
   else if (m.method === 'skills/list') result(m.id, { data: [] });
   else if (m.method === 'model/list')
     result(

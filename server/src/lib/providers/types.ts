@@ -10,6 +10,8 @@ export type ChatSettings = {
 };
 
 export type ProviderModel = {
+  providerId?: string;
+  providerName?: string;
   id: string;
   model: string;
   displayName: string;

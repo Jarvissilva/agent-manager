@@ -194,3 +194,64 @@ if (
       updateName.run(text.replace(/\s+/g, ' ').trim().slice(0, 100), row.id);
   }
 }
+
+// Usage is intentionally independent of session/agent foreign keys: deleting
+// conversation content must not rewrite historical consumption reports.
+database.exec(`
+  CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+  CREATE TABLE IF NOT EXISTS usage_records (
+    sessionId TEXT NOT NULL, sourceKey TEXT NOT NULL, turnId TEXT NOT NULL,
+    provider TEXT NOT NULL, agentId INTEGER, agentName TEXT, model TEXT,
+    observedAt TEXT NOT NULL, counters TEXT NOT NULL, raw TEXT NOT NULL,
+    PRIMARY KEY(sessionId, sourceKey)
+  );
+  CREATE INDEX IF NOT EXISTS usage_records_date ON usage_records(observedAt);
+  CREATE TABLE IF NOT EXISTS usage_turns (
+    sessionId TEXT NOT NULL, turnId TEXT NOT NULL, provider TEXT NOT NULL,
+    agentId INTEGER, agentName TEXT, model TEXT, observedAt TEXT NOT NULL,
+    complete INTEGER NOT NULL DEFAULT 0, partial INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY(sessionId, turnId)
+  );
+  CREATE INDEX IF NOT EXISTS usage_turns_date ON usage_turns(observedAt);
+  CREATE INDEX IF NOT EXISTS usage_records_turn ON usage_records(sessionId,turnId);
+  CREATE TABLE IF NOT EXISTS usage_checkpoints (
+    sessionId TEXT NOT NULL, source TEXT NOT NULL, counters TEXT NOT NULL,
+    PRIMARY KEY(sessionId, source)
+  );
+`);
+
+if (
+  !database
+    .prepare('PRAGMA table_info(usage_turns)')
+    .all()
+    .some((column) => column.name === 'partial')
+)
+  database.exec(
+    'ALTER TABLE usage_turns ADD COLUMN partial INTEGER NOT NULL DEFAULT 0',
+  );
+
+// Prompt queues belong to saved conversations and are deleted with them.
+database.exec(`
+  CREATE TABLE IF NOT EXISTS chat_prompt_queue (
+    position INTEGER PRIMARY KEY AUTOINCREMENT,
+    id TEXT NOT NULL UNIQUE,
+    sessionId TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    prompt TEXT NOT NULL, settings TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('queued','sending','failed')),
+    error TEXT, createdAt TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS chat_prompt_queue_session ON chat_prompt_queue(sessionId,position);
+  CREATE TABLE IF NOT EXISTS chat_queue_state (
+    sessionId TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+    paused INTEGER NOT NULL DEFAULT 0, reason TEXT
+  );
+`);
+if (
+  !database
+    .prepare('PRAGMA table_info(chat_prompt_queue)')
+    .all()
+    .some((column) => column.name === 'attachments')
+)
+  database.exec(
+    "ALTER TABLE chat_prompt_queue ADD COLUMN attachments TEXT NOT NULL DEFAULT '[]'",
+  );

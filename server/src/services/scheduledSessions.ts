@@ -16,12 +16,7 @@ import {
   type SessionInfo,
   type SessionSnapshot,
 } from '../repositories/sessions.js';
-import {
-  getSessionById,
-  projectBusy,
-  startSession,
-  stopSession,
-} from './sessions.js';
+import { getSessionById, startSession, stopSession } from './sessions.js';
 import { RequestError } from '../lib/http/errors.js';
 
 export function enqueueSchedule(schedule: Schedule) {
@@ -127,16 +122,10 @@ export async function dispatchScheduledSessions() {
   if (stopped || dispatching) return;
   dispatching = true;
   try {
-    const blockedProjects = new Set<number>();
     for (const entry of queuedSessions()) {
       if (stopped) break;
       const queued = findSessionById(entry.id);
       if (!queued || queued.status !== 'queued') continue;
-      if (queued.projectId !== null) {
-        if (blockedProjects.has(queued.projectId)) continue;
-        blockedProjects.add(queued.projectId);
-      }
-      if (projectBusy(queued.projectId)) continue;
       const previous =
         queued.occurrenceId && (queued.stepIndex ?? 0) > 0
           ? occurrenceSessions(queued.occurrenceId).find(
@@ -173,7 +162,6 @@ export async function dispatchScheduledSessions() {
         const current = findSessionById(queued.id);
         if (!current || current.status !== 'queued') continue;
         queued.projectId = current.projectId;
-        if (projectBusy(queued.projectId)) continue;
         queued.startedAt = new Date().toISOString();
         // startSession preserves the queued record and its frozen configuration.
         const runtime = startSession(

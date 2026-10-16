@@ -1,3 +1,4 @@
+import { newChatDefaults } from '../../services/settings.js';
 import type { Request, Response } from 'express';
 import { positiveId, RequestError } from '../../lib/http/errors.js';
 import {
@@ -5,16 +6,10 @@ import {
   requireWorkingDirectory,
 } from '../../lib/directories.js';
 import { validateChatSettings } from '../../services/chatSettings.js';
-import {
-  getSession,
-  getSessionById,
-  startSession,
-  withSessionActivity,
-} from '../../services/sessions.js';
+import { startSession, withSessionActivity } from '../../services/sessions.js';
 import {
   findSavedSession,
   findSessionById,
-  queuedSessionCount,
 } from '../../repositories/sessions.js';
 import { findProject } from '../../repositories/projects.js';
 import { conversationIdPattern } from '../../lib/providers/codex/conversation.js';
@@ -55,29 +50,9 @@ export default async function createSession(
         throw new RequestError(404, 'Project not found.');
     }
   }
-  const existing =
-    projectId === null
-      ? saved
-        ? getSessionById(saved.id)
-        : undefined
-      : getSession(projectId);
-  if (projectId !== null && queuedSessionCount(projectId)) {
-    response.status(409).json({
-      error:
-        'This project has queued sessions. Wait for them to finish or cancel them.',
-    });
-    return;
-  }
-  if (existing && existing.info.status !== 'exited') {
-    response.status(409).json({
-      error: 'A session is already running for this project or conversation.',
-    });
-    return;
-  }
-
-  const transport: unknown = request.body?.transport ?? 'terminal';
-  if (transport !== 'chat' && transport !== 'terminal') {
-    response.status(400).json({ error: 'Choose chat or terminal.' });
+  const transport: unknown = request.body?.transport ?? 'chat';
+  if (transport !== 'chat') {
+    response.status(400).json({ error: 'Only chat sessions are supported.' });
     return;
   }
   const resumeSessionId: unknown = resumeId;
@@ -122,6 +97,12 @@ export default async function createSession(
         .json({ error: 'Session not found in this project.' });
       return;
     }
+    if (resume.status !== 'exited' && resume.status !== 'interrupted') {
+      response
+        .status(409)
+        .json({ error: 'This conversation is already open or queued.' });
+      return;
+    }
     if (
       !(resume.providerConversationId ?? resume.codexConversationId) ||
       !(
@@ -133,10 +114,6 @@ export default async function createSession(
       response.status(400).json({
         error: 'No provider conversation ID was captured for this session.',
       });
-      return;
-    }
-    if (resume.status !== 'exited' && resume.status !== 'interrupted') {
-      response.status(409).json({ error: 'This session has not ended yet.' });
       return;
     }
   }
@@ -151,12 +128,6 @@ export default async function createSession(
     response
       .status(400)
       .json({ error: 'Choose Codex, Antigravity or OpenCode.' });
-    return;
-  }
-  if (provider !== 'codex' && transport !== 'chat') {
-    response
-      .status(400)
-      .json({ error: 'This provider uses the chat interface.' });
     return;
   }
   if (request.body?.provider && request.body.provider !== provider) {
@@ -175,10 +146,14 @@ export default async function createSession(
       ? resume.workingDirectory
       : await workingDirectory(request.body?.workingDirectory);
     if (resume) await requireWorkingDirectory(directory);
+    const defaults =
+      !resume && transport === 'chat' && request.body?.settings === undefined
+        ? await newChatDefaults(provider, directory)
+        : undefined;
     const settings =
       request.body?.settings !== undefined
         ? await validateChatSettings(request.body.settings, provider, directory)
-        : undefined;
+        : defaults?.settings;
     if (resume && !findSessionById(resume.id))
       throw new RequestError(
         404,
@@ -199,7 +174,10 @@ export default async function createSession(
       provider,
     );
     if (session.chat) await session.chat.ready;
-    response.status(201).json({ session: withSessionActivity(session.info) });
+    response.status(201).json({
+      session: withSessionActivity(session.info),
+      ...(defaults?.notice ? { defaultsNotice: defaults.notice } : {}),
+    });
   } catch (error) {
     if (error instanceof RequestError) {
       response.status(error.status).json({ error: error.message });

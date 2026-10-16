@@ -60,12 +60,12 @@ test('saved sessions retain meaningful outcomes without exposing process states'
   );
 });
 
-test('queued and execution sessions are supported without guessing terminal activity', () => {
+test('queued, execution and legacy sessions use chat activity', () => {
   assert.equal(sessionActivity({ ...info, status: 'queued' }), 'queued');
   assert.equal(
     sessionActivity({ ...info, mode: 'exec', transport: 'terminal' }),
     'running',
   );
-  assert.equal(sessionActivity({ ...info, transport: 'terminal' }), null);
-  assert.equal(sessionActivity({ ...info, transport: undefined }), null);
+  assert.equal(sessionActivity({ ...info, transport: 'terminal' }), 'ready');
+  assert.equal(sessionActivity({ ...info, transport: undefined }), 'ready');
 });

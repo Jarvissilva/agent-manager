@@ -49,7 +49,7 @@ export default function Schedules() {
     <main className="mx-auto w-full max-w-5xl flex-1 px-3 py-5 sm:px-4 lg:py-6">
       <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">Scheduled</h1>
+          <h1 className="text-2xl font-semibold">Automations</h1>
           <p className="mt-2 text-sm text-muted-foreground">
             Work that runs later or repeats. Projects are optional.
           </p>
@@ -59,7 +59,7 @@ export default function Schedules() {
             to={`/schedules/new${projectId && projectId !== 'none' ? `?projectId=${projectId}` : ''}`}
           >
             <Icon name="plus" />
-            New schedule
+            New automation
           </Link>
         </Button>
       </header>
@@ -75,7 +75,7 @@ export default function Schedules() {
         statuses={['enabled', 'paused', 'completed']}
       />
       <p className="mb-4 text-xs text-muted-foreground" role="status">
-        {visible.length} {visible.length === 1 ? 'schedule' : 'schedules'}
+        {visible.length} {visible.length === 1 ? 'automation' : 'automations'}
       </p>
       <ScheduleList schedules={visible} />
     </main>

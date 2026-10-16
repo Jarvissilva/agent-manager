@@ -24,7 +24,8 @@ export async function homeLoader({ request }: LoaderFunctionArgs) {
 
 export default function Home() {
   const sessions = useLoaderData<typeof homeLoader>();
-  const projects = useRouteLoaderData<typeof projectsLoader>('app') ?? [];
+  const projects =
+    useRouteLoaderData<typeof projectsLoader>('app')?.projects ?? [];
   const start = useFetcher<typeof homeAction>();
   const [projectId, setProjectId] = useState('');
   const [directory, setDirectory] = useState(
@@ -36,21 +37,7 @@ export default function Home() {
   const needsInput = sessions.filter(
     (session) => session.activity === 'needs_input',
   );
-  const projectSession = project
-    ? sessions.find(
-        (session) =>
-          session.projectId === project.id &&
-          ['running', 'stopping'].includes(session.status),
-      )
-    : undefined;
-  const queued =
-    project &&
-    sessions.some(
-      (session) =>
-        session.projectId === project.id && session.status === 'queued',
-    );
   const busy = start.state !== 'idle';
-  const blocked = Boolean(projectSession || queued);
   const suggestions = [
     ...new Set([
       ...(project?.paths ?? []),
@@ -129,30 +116,13 @@ export default function Home() {
               {start.data.error}
             </p>
           )}
-          {blocked && (
-            <p role="status" className="text-sm text-muted-foreground">
-              {projectSession ? (
-                <>
-                  This project already has an active session.{' '}
-                  <Link
-                    to={`/sessions/${projectSession.id}`}
-                    className="text-foreground underline underline-offset-4"
-                  >
-                    Open session
-                  </Link>
-                </>
-              ) : (
-                'This project has queued sessions. Wait for them to finish, or choose another project.'
-              )}
-            </p>
-          )}
           <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
             <p className="text-xs text-muted-foreground">
               Model and reasoning settings are available in chat.
             </p>
             <Button
               type="submit"
-              disabled={busy || blocked || !directory.trim()}
+              disabled={busy || !directory.trim()}
               className="rounded-full"
             >
               <Icon name="plus" />

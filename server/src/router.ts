@@ -1,3 +1,5 @@
+import { getUsage } from './controllers/usage.js';
+import { getAppSettings, patchAppSettings } from './controllers/settings.js';
 import {
   getDiscoveredSkills,
   postImportedSkill,
@@ -8,9 +10,11 @@ import {
 } from './controllers/session/details.js';
 import createSession from './controllers/session/createSession.js';
 import deleteSession from './controllers/session/deleteSession.js';
-import { Router } from 'express';
+import { Router, raw } from 'express';
+import { getFiles, selectFile, uploadFile } from './controllers/files.js';
 import {
   getChat,
+  updateChatQueue,
   postMessage,
   interruptChat,
   respondToChat,
@@ -64,6 +68,26 @@ function localWrite(request: Request, response: Response, next: NextFunction) {
   next();
 }
 
+router.get('/usage', getUsage);
+router.use('/files', (request, response, next) => {
+  if (!isAllowedOrigin(request)) {
+    response.status(403).json({
+      error: 'This request must come from a trusted dashboard origin.',
+    });
+    return;
+  }
+  next();
+});
+router.post('/files/browse', getFiles);
+router.post('/files/reference', selectFile);
+router.post(
+  '/files/uploads',
+  raw({ type: 'application/octet-stream', limit: '20mb' }),
+  uploadFile,
+);
+router.get('/settings', getAppSettings);
+router.patch('/settings', localWrite, patchAppSettings);
+
 router.get('/projects', getProjects);
 router.post('/projects', createProject);
 router.patch('/projects/:projectId', localWrite, updateProject);
@@ -94,6 +118,7 @@ router.patch('/sessions/:sessionId', localWrite, updateSessionDetails);
 router.delete('/sessions/:sessionId', localWrite, deleteSession);
 router.post('/sessions/:sessionId/resume', localWrite, createSession);
 router.get('/sessions/:sessionId/chat', getChat);
+router.patch('/sessions/:sessionId/queue', localWrite, updateChatQueue);
 router.post('/sessions/:sessionId/messages', localWrite, postMessage);
 router.post('/sessions/:sessionId/interrupt', localWrite, interruptChat);
 router.post(

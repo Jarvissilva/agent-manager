@@ -121,6 +121,7 @@ readline.createInterface({input:process.stdin}).once('line', line => {
         (
           await request('POST', '/projects/1/session', {
             provider: 'antigravity',
+            transport: 'terminal',
           })
         ).status,
         400,
@@ -277,6 +278,27 @@ readline.createInterface({input:process.stdin}).once('line', line => {
       assert.ok(
         [...chat().items.values()].some(
           (item) => item.status === 'interrupted',
+        ),
+      );
+      const attachment = join(directory, 'reference.md');
+      await writeFile(attachment, 'Laptop reference');
+      assert.equal(
+        (
+          await request('POST', `/sessions/${session.id}/messages`, {
+            prompt: 'Read the reference',
+            attachments: [{ path: attachment }],
+          })
+        ).status,
+        202,
+      );
+      await waitFor(() => chat().state === 'idle');
+      const attachmentLaunch = JSON.parse(
+        await readFile(join(directory, 'launch.json'), 'utf8'),
+      );
+      assert.ok(attachmentLaunch.input.message.content.includes(attachment));
+      assert.ok(
+        listSessionItems(session.id).some(
+          (item) => item.role === 'user' && item.text.includes(attachment),
         ),
       );
       await request('DELETE', '/projects/1/session');

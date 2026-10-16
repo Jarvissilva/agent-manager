@@ -1,3 +1,9 @@
+import SessionTabs from '../components/SessionTabs';
+import type { Session } from '../types/session';
+import { api } from '../lib/api';
+import type { AppSettings } from '../types/settings';
+import { useAppSettings } from '../lib/preferences';
+import useKeyboardShortcuts from '../hooks/useKeyboardShortcuts';
 import { loadProjects } from '../lib/projects';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -6,6 +12,7 @@ import {
   ScrollRestoration,
   useLocation,
   useNavigation,
+  useRouteLoaderData,
   type LoaderFunctionArgs,
 } from 'react-router';
 import { PanelLeftClose, PanelLeft } from 'lucide-react';
@@ -15,24 +22,40 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
 export async function projectsLoader({ request }: LoaderFunctionArgs) {
-  return loadProjects(request.signal);
+  const [projects, settings, sessions] = await Promise.all([
+    loadProjects(request.signal),
+    api<AppSettings>('/settings', request.signal),
+    api<Session[]>('/sessions', request.signal),
+  ]);
+  return { projects, settings, sessions };
 }
 const navigationItems: { to: string; label: string; icon: IconName }[] = [
   { to: '/', label: 'Home', icon: 'home' },
   { to: '/sessions', label: 'Sessions', icon: 'chat' },
-  { to: '/schedules', label: 'Scheduled', icon: 'clock' },
+  { to: '/schedules', label: 'Automations', icon: 'clock' },
   { to: '/projects', label: 'Projects', icon: 'folder' },
   { to: '/agents', label: 'Agents', icon: 'agent' },
   { to: '/skills', label: 'Skills', icon: 'skills' },
+  { to: '/usage', label: 'Usage', icon: 'activity' },
+  { to: '/settings', label: 'Settings', icon: 'settings' },
 ];
 export default function AppLayout() {
   const location = useLocation();
+  const data = useRouteLoaderData<typeof projectsLoader>('app')!;
+  const settings = useAppSettings();
+  useKeyboardShortcuts(settings.shortcutsEnabled);
   const navigation = useNavigation();
   const sessionPage = /^\/sessions\/[^/]+$/.test(location.pathname);
   const [sidebarExpanded, setSidebarExpanded] = useState(
     () => localStorage.getItem('sidebar-collapsed') !== 'true',
   );
   const frame = useRef<HTMLDivElement>(null);
+  const mobileNavigation = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    mobileNavigation.current
+      ?.querySelector('[aria-current="page"]')
+      ?.scrollIntoView({ block: 'nearest', inline: 'center' });
+  }, [location.pathname]);
   useEffect(() => {
     const viewport = window.visualViewport;
     const element = frame.current;
@@ -149,6 +172,7 @@ export default function AppLayout() {
               className="absolute inset-x-0 top-0 z-50 h-0.5 animate-pulse bg-foreground/40 motion-reduce:animate-none"
             />
           )}
+          <SessionTabs sessions={data.sessions} />
           <Outlet />
         </div>
         <nav
@@ -158,7 +182,10 @@ export default function AppLayout() {
             sessionPage ? 'shrink-0' : 'fixed inset-x-0 bottom-0 z-40',
           )}
         >
-          <div className="grid h-16 grid-cols-6 items-center gap-1 px-2">
+          <div
+            ref={mobileNavigation}
+            className="flex h-16 items-center gap-1 overflow-x-auto px-2"
+          >
             {navigationItems.map((item) => {
               const active = isActive(item.to);
               return (
@@ -167,7 +194,7 @@ export default function AppLayout() {
                   to={item.to}
                   aria-current={active ? 'page' : undefined}
                   className={cn(
-                    'flex h-14 min-w-0 flex-col items-center justify-center gap-1 rounded-xl text-[10px] font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                    'flex h-14 min-w-16 flex-1 shrink-0 flex-col items-center justify-center gap-1 rounded-xl text-[10px] font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                     active && 'bg-sidebar-accent text-sidebar-foreground',
                   )}
                 >

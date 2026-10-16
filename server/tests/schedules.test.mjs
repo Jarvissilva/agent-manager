@@ -29,7 +29,7 @@ test(
     );
     const { database } = await import('../src/lib/database.ts');
     const { default: app } = await import('../src/app.ts');
-    const { getSession, shutdownSessions } =
+    const { getSession, getSessionById, shutdownSessions } =
       await import('../src/services/sessions.ts');
     const { findSessionById, listSessions, recoverSessionHistory } =
       await import('../src/repositories/sessions.ts');
@@ -146,8 +146,8 @@ test(
       const approval = enqueueSchedule(await create({ prompt: 'approve' }));
       const queued = enqueueSchedule(await create({ prompt: 'fast' }));
       await dispatchScheduledSessions();
-      await wait(() => getSession(1).chat.requests.size === 1);
-      assert.equal(findSessionById(queued.id).status, 'queued');
+      await wait(() => getSessionById(approval.id).chat.requests.size === 1);
+      await wait(() => findSessionById(queued.id).outcome === 'succeeded');
       assert.equal(findSessionById(approval.id).outcome, null);
       const other = enqueueSchedule(
         await create({ projectId: 2, prompt: 'fast' }),
@@ -156,10 +156,12 @@ test(
       await wait(() => findSessionById(other.id).outcome === 'succeeded');
       assert.equal(findSessionById(approval.id).status, 'running');
 
-      assert.equal(
-        (await req('POST', '/projects/1/session', { transport: 'chat' }))
-          .status,
-        409,
+      const manual = await json('POST', '/projects/1/session', {
+        transport: 'chat',
+      });
+      await json('POST', `/sessions/${manual.session.id}/cancel`, {});
+      await wait(
+        () => getSessionById(manual.session.id).info.status === 'exited',
       );
       await json('POST', `/sessions/${approval.id}/requests/approval-1`, {
         decision: 'accept',

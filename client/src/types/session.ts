@@ -1,5 +1,8 @@
-import type { ChatSettings } from './chat';
+import type { UsageSummary } from './usage';
+import type { ChatSettings, ChatQueue } from './chat';
 export type Session = {
+  usage?: UsageSummary;
+  queue?: ChatQueue;
   id: string;
   name: string | null;
   projectId: number | null;

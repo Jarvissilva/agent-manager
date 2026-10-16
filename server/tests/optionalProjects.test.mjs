@@ -203,16 +203,14 @@ test(
       assert.equal(resumed.session.name, 'Renamed through alias');
       assert.equal(resumed.session.id, a.id);
       assert.equal(resumed.session.projectId, project.id);
-      assert.equal(
-        (
-          await req('POST', '/sessions', {
-            transport: 'chat',
-            projectId: project.id,
-            workingDirectory: other,
-          })
-        ).status,
-        409,
-      );
+      const parallel = await json('POST', '/sessions', {
+        transport: 'chat',
+        projectId: project.id,
+        workingDirectory: other,
+      });
+      assert.notEqual(parallel.session.id, a.id);
+      await end(parallel.session.id);
+      await json('DELETE', `/sessions/${parallel.session.id}`);
       await end(a.id);
       await json('PATCH', `/sessions/${a.id}`, { projectId: null });
       assert.equal(

@@ -1,3 +1,5 @@
+import { chatQueue } from '../../repositories/chatQueue.js';
+import { usageSummary } from '../../repositories/usage.js';
 import type { Request, Response } from 'express';
 import {
   findSessionById,
@@ -16,7 +18,11 @@ export function getSavedSession(request: Request, response: Response) {
   const row = findSessionById(String(request.params.sessionId));
   const session = row ? findSavedSession(row.projectId, row.id) : undefined;
   if (!session) throw new RequestError(404, 'Session not found.');
-  response.json(withSessionActivity(session));
+  response.json({
+    ...withSessionActivity(session),
+    usage: usageSummary(session.id),
+    ...(session.mode === 'interactive' ? { queue: chatQueue(session.id) } : {}),
+  });
 }
 export function updateSessionDetails(request: Request, response: Response) {
   const row = findSessionById(String(request.params.sessionId));

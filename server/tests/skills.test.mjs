@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -22,15 +22,7 @@ test(
     await mkdir(join(directory, 'bin'));
     await writeFile(
       join(directory, 'bin', 'codex'),
-      `#!${process.execPath}
-const fs=require('node:fs');
-const args=process.argv.slice(2);
-const logDir=JSON.parse(args.find(arg=>arg.startsWith('log_dir=')).slice(8));
-fs.writeFileSync(logDir+'/codex-tui.log','INFO session_loop{thread_id=12345678-1234-5678-9012-123456789012}: codex_core::session: new\\n');
-console.log('ARGS:'+JSON.stringify(args));
-console.log('READY');
-process.stdin.resume();
-`,
+      `#!${process.execPath}\n${(await readFile(new URL('./fixtures/codex.cjs', import.meta.url), 'utf8')).replace(/^#!.*\n/, '')}`,
       { mode: 0o755 },
     );
     const { database } = await import('../src/lib/database.ts');
@@ -65,15 +57,16 @@ process.stdin.resume();
       }
     };
     const instructions = async () => {
-      await waitFor(() => getSession(1).output.includes('READY'));
-      const args = JSON.parse(
-        /ARGS:([^\r\n]+)\r?\n/.exec(getSession(1).output)[1],
-      );
-      return JSON.parse(
-        args
-          .find((arg) => arg.startsWith('developer_instructions='))
-          .slice('developer_instructions='.length),
-      );
+      const calls = (
+        await readFile(join(directory, 'codex-requests.jsonl'), 'utf8')
+      )
+        .trim()
+        .split('\n')
+        .map(JSON.parse);
+      return calls.findLast(
+        (call) =>
+          call.method === 'thread/start' || call.method === 'thread/resume',
+      ).params.developerInstructions;
     };
     try {
       assert.deepEqual(await (await request('GET', '/skills')).json(), []);

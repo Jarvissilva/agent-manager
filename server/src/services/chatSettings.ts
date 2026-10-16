@@ -40,8 +40,6 @@ export async function validateChatSettings(
       400,
       'Choose valid model, reasoning and permission settings.',
     );
-  if (provider === 'opencode' && settings.mode === 'plan')
-    throw new RequestError(400, 'Plan mode is not supported for OpenCode yet.');
   if (provider === 'antigravity' && settings.permissions === 'read-only')
     throw new RequestError(
       400,

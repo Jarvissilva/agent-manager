@@ -1,3 +1,5 @@
+import type { UsageSummary } from './usage';
+import type { FileAttachment } from './files';
 export type ChatItem = {
   id: string;
   turnId: string;
@@ -21,7 +23,23 @@ export type ChatRequest = {
     options: { label: string; description: string }[];
   }[];
 };
+export type ChatQueue = {
+  entries: {
+    id: string;
+    sessionId: string;
+    prompt: string;
+    settings: ChatSettings;
+    attachments?: FileAttachment[];
+    status: 'queued' | 'sending' | 'failed';
+    error: string | null;
+    createdAt: string;
+  }[];
+  paused: boolean;
+  reason: string | null;
+};
 export type ChatSnapshot = {
+  usage?: UsageSummary;
+  queue?: ChatQueue;
   settings?: ChatSettings;
   items: ChatItem[];
   requests: ChatRequest[];
@@ -38,6 +56,8 @@ export type ChatSettings = {
   approvalPolicy?: 'on-request' | 'untrusted' | 'never';
 };
 export type ProviderModel = {
+  providerId?: string;
+  providerName?: string;
   id: string;
   model: string;
   displayName: string;

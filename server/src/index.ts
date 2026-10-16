@@ -1,7 +1,6 @@
 import { initializeSkills } from './services/skills.js';
 import app from './app.js';
 import { shutdownSessions } from './services/sessions.js';
-import { attachTerminal } from './lib/terminal/websocket.js';
 import { startScheduler, stopScheduler } from './services/schedules.js';
 
 initializeSkills();
@@ -15,13 +14,10 @@ const server = app.listen(port, '127.0.0.1', () => {
   console.log(`Server listening at http://127.0.0.1:${port}`);
 });
 
-const terminals = attachTerminal(server);
 startScheduler();
 
 function shutdown() {
   stopScheduler();
-  for (const connection of terminals.clients) connection.terminate();
-  terminals.close();
   server.close();
   void shutdownSessions()
     .then(() => process.exit(0))

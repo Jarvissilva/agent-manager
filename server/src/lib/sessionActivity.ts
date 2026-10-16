@@ -14,8 +14,6 @@ export function sessionActivity(
   chat?: ChatActivity,
 ): SessionActivity | null {
   if (info.status === 'queued') return 'queued';
-  // An interactive terminal has no reliable turn/approval activity signal.
-  if (info.transport !== 'chat' && info.mode !== 'exec') return null;
   if (chat && chat.state !== 'closed') {
     if (chat.requests.size) return 'needs_input';
     if (chat.state === 'working' || chat.state === 'stopping') return 'running';

@@ -3,6 +3,7 @@ import { database } from '../../lib/database.js';
 import { isAllowedOrigin } from '../../lib/security/requestOrigin.js';
 import {
   getSession,
+  getSessionById,
   stopSession,
   withSessionActivity,
 } from '../../services/sessions.js';
@@ -10,6 +11,7 @@ import {
   listSessions,
   queuedSessionCount,
 } from '../../repositories/sessions.js';
+import { RequestError } from '../../lib/http/errors.js';
 
 const findProject = database.prepare('SELECT id FROM projects WHERE id = ?');
 
@@ -50,7 +52,15 @@ export function getProjectSession(request: Request, response: Response) {
 export function stopProjectSession(request: Request, response: Response) {
   const project = getProject(request, response);
   if (!project) return;
-  const session = getSession(project.id);
+  const active = listSessions(project.id)
+    .map((info) => getSessionById(info.id))
+    .filter((session) => session && session.info.status !== 'exited');
+  if (active.length > 1)
+    throw new RequestError(
+      409,
+      'Multiple sessions are open in this project. Stop a specific session using /sessions/:sessionId/cancel.',
+    );
+  const session = active[0] ?? getSession(project.id);
   if (session) stopSession(session);
   response.json({
     session: session ? withSessionActivity(session.info) : null,

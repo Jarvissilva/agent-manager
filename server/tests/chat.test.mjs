@@ -227,8 +227,12 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
       assert.equal(launch.params.model, 'fixture-a');
       assert.equal(launch.params.config.model_reasoning_effort, 'high');
       assert.equal(
-        (await request('POST', '/projects/1/session', { transport: 'chat' }))
-          .status,
+        (
+          await request('POST', '/projects/1/session', {
+            transport: 'chat',
+            resumeSessionId: session.id,
+          })
+        ).status,
         409,
       );
       assert.equal(
@@ -552,6 +556,53 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
       assert.equal(permissionTurn.sandboxPolicy.type, 'workspaceWrite');
       assert.equal(permissionTurn.sandboxPolicy.networkAccess, true);
       assert.equal(permissionTurn.approvalPolicy, 'on-request');
+      const reference = join(directory, 'attachment.md');
+      const image = join(directory, 'attachment.png');
+      await writeFile(reference, 'Read this reference');
+      await writeFile(image, Buffer.from([1, 2, 3]));
+      assert.equal(
+        (
+          await request('POST', `/sessions/${session.id}/messages`, {
+            prompt: '',
+            attachments: [{ path: reference }, { path: image }],
+          })
+        ).status,
+        202,
+      );
+      await waitFor(() => getSession(1).chat.state === 'idle');
+      const attachmentTurn = JSON.parse(
+        await readFile(join(directory, 'turn.json'), 'utf8'),
+      );
+      assert.match(
+        attachmentTurn.input[0].text,
+        /Use these files as reference/,
+      );
+      assert.ok(attachmentTurn.input[0].text.includes(reference));
+      assert.ok(
+        attachmentTurn.input.some(
+          (input) => input.type === 'mention' && input.path === reference,
+        ),
+      );
+      assert.ok(
+        attachmentTurn.input.some(
+          (input) => input.type === 'localImage' && input.path === image,
+        ),
+      );
+      assert.ok(
+        listSessionItems(session.id).some(
+          (item) => item.role === 'user' && item.text.includes(reference),
+        ),
+      );
+      await rm(reference);
+      assert.equal(
+        (
+          await request('POST', `/sessions/${session.id}/messages`, {
+            prompt: 'missing',
+            attachments: [{ path: reference }],
+          })
+        ).status,
+        400,
+      );
       const finalChat = getSession(1).chat;
       assert.equal((await send('crash')).status, 202);
       await waitFor(() => getSession(1).info.status === 'exited');

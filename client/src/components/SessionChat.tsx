@@ -1,5 +1,6 @@
+import ChatQueue from './ChatQueue';
 import { useEffect, useRef, useState } from 'react';
-import { useFetcher } from 'react-router';
+import { Link, useFetcher } from 'react-router';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import Icon from './Icon';
@@ -20,6 +21,7 @@ import type {
   ChatRequest,
   ChatSnapshot,
   ChatSettings,
+  ChatQueue as Queue,
   ProviderModel,
 } from '../types/chat';
 import ChatComposer from './ChatComposer';
@@ -263,8 +265,9 @@ export default function SessionChat({
   provider = 'codex',
   models = [],
   settings,
-  view = 'chat',
   canContinue = false,
+  savedQueue,
+  queueEnabled = true,
   blocked = false,
 }: {
   sessionId: string;
@@ -272,8 +275,9 @@ export default function SessionChat({
   active: boolean;
   models?: ProviderModel[];
   settings?: ChatSettings;
-  view?: 'chat' | 'terminal';
   canContinue?: boolean;
+  savedQueue?: Queue;
+  queueEnabled?: boolean;
   blocked?: boolean;
 }) {
   const providerName =
@@ -303,6 +307,8 @@ export default function SessionChat({
       if (message.type === 'snapshot') {
         setSnapshot(message);
         if (message.state === 'closed') source.close();
+      } else if (message.type === 'queue') {
+        setSnapshot((previous) => ({ ...previous, queue: message.queue }));
       } else if (message.type === 'state') {
         setSnapshot((previous) => ({
           ...previous,
@@ -310,6 +316,7 @@ export default function SessionChat({
           error: message.error,
           requests: message.requests,
           settings: message.settings,
+          usage: message.usage,
         }));
         if (message.state === 'closed') source.close();
       } else if (message.type === 'item' && message.item) {
@@ -329,7 +336,7 @@ export default function SessionChat({
   useEffect(() => {
     if (follow.current && scroll.current)
       scroll.current.scrollTop = scroll.current.scrollHeight;
-  }, [snapshot.items, snapshot.requests, view]);
+  }, [snapshot.items, snapshot.requests]);
   useEffect(() => {
     const element = scroll.current;
     if (!element) return;
@@ -339,10 +346,10 @@ export default function SessionChat({
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
+  const queue = active
+    ? (snapshot.queue ?? savedQueue)
+    : (savedQueue ?? snapshot.queue);
   const working = snapshot.state === 'working' || snapshot.state === 'stopping';
-  const commands = snapshot.items.filter(
-    (item) => item.type === 'commandExecution',
-  );
   return (
     <div className="session-chat flex min-h-0 flex-1 flex-col">
       <div
@@ -355,65 +362,34 @@ export default function SessionChat({
               element.scrollHeight - element.scrollTop - element.clientHeight <
               100;
         }}
-        aria-label={view === 'chat' ? 'Conversation' : 'Command output'}
+        aria-label="Conversation"
       >
-        <div
-          className={`chat-transcript-content mx-auto w-full px-3 py-5 sm:px-4 ${view === 'chat' ? 'max-w-3xl' : 'max-w-6xl'}`}
-        >
-          {view === 'chat' ? (
-            <>
-              {!snapshot.items.length && (
-                <div className="py-20 text-center">
-                  <Icon name="spark" className="mx-auto mb-5 size-8" />
-                  <h1 className="text-2xl font-medium tracking-tight">
-                    What are we working on?
-                  </h1>
-                </div>
-              )}
-              {snapshot.items.map((item) => (
-                <Message key={item.id} item={item} />
-              ))}
-              {working && !snapshot.requests.length && (
-                <div
-                  className="mb-5 flex items-center gap-2.5 text-sm text-muted-foreground"
-                  role="status"
-                >
-                  <span className="size-2 rounded-full bg-foreground/70 animate-pulse motion-reduce:animate-none" />
-                  {providerName} is{' '}
-                  {snapshot.state === 'stopping' ? 'stopping' : 'working'}…
-                </div>
-              )}
-              {active && !connected && (
-                <p role="status" className="mb-5 text-xs text-muted-foreground">
-                  Reconnecting to {providerName}…
-                </p>
-              )}
-            </>
-          ) : (
-            <>
-              <p className="mb-5 text-xs text-muted-foreground">
-                Command output · Read-only
-              </p>
-              {commands.length ? (
-                commands.map((item) => (
-                  <div
-                    key={item.id}
-                    className="mb-5 overflow-hidden rounded-xl border bg-sidebar"
-                  >
-                    <div className="border-b px-4 py-3 font-mono text-xs break-words">
-                      $ {item.title}
-                    </div>
-                    <pre className="overflow-auto p-4 font-mono text-xs leading-6 whitespace-pre-wrap break-words">
-                      {item.text}
-                    </pre>
-                  </div>
-                ))
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Commands and their output will appear here.
-                </p>
-              )}
-            </>
+        <div className="chat-transcript-content mx-auto w-full max-w-3xl px-3 py-5 sm:px-4">
+          {!snapshot.items.length && (
+            <div className="py-20 text-center">
+              <Icon name="spark" className="mx-auto mb-5 size-8" />
+              <h1 className="text-2xl font-medium tracking-tight">
+                What are we working on?
+              </h1>
+            </div>
+          )}
+          {snapshot.items.map((item) => (
+            <Message key={item.id} item={item} />
+          ))}
+          {working && !snapshot.requests.length && (
+            <div
+              className="mb-5 flex items-center gap-2.5 text-sm text-muted-foreground"
+              role="status"
+            >
+              <span className="size-2 rounded-full bg-foreground/70 animate-pulse motion-reduce:animate-none" />
+              {providerName} is{' '}
+              {snapshot.state === 'stopping' ? 'stopping' : 'working'}…
+            </div>
+          )}
+          {active && !connected && (
+            <p role="status" className="mb-5 text-xs text-muted-foreground">
+              Reconnecting to {providerName}…
+            </p>
           )}
           {snapshot.requests.map((request) => (
             <Card
@@ -435,6 +411,24 @@ export default function SessionChat({
           )}
         </div>
       </div>
+      <div className="mx-auto w-full max-w-3xl px-4 text-xs text-muted-foreground">
+        <Link
+          className="underline-offset-4 hover:underline"
+          to={`/usage?sessionId=${sessionId}`}
+        >
+          {snapshot.usage?.total === null || snapshot.usage?.total === undefined
+            ? 'Usage unavailable'
+            : `${snapshot.usage.total.toLocaleString()} tokens${snapshot.usage.coverage === 'partial' ? ' · partial' : ''}`}
+        </Link>
+      </div>
+      {queue && (
+        <ChatQueue
+          queue={queue}
+          sessionId={sessionId}
+          active={active}
+          canContinue={canContinue}
+        />
+      )}
       <ChatComposer
         provider={provider}
         sessionId={sessionId}
@@ -443,9 +437,13 @@ export default function SessionChat({
         models={models}
         disabled={blocked || (!active && !canContinue)}
         connected={
-          canContinue || (connected && snapshot.state === 'idle') || working
+          canContinue ||
+          (connected &&
+            ['idle', 'working', 'stopping'].includes(snapshot.state))
         }
         working={working}
+        canQueue={queueEnabled && (active || canContinue)}
+        queuePending={Boolean(queue?.entries.length)}
         stopping={snapshot.state === 'stopping'}
         onSend={() => {
           follow.current = true;

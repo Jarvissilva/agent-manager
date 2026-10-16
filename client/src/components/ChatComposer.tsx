@@ -1,7 +1,12 @@
+import { readComposerDraft, saveComposerDraft } from '../lib/composerDraft';
+import { chatDefaults, useAppSettings } from '../lib/preferences';
 import { useEffect, useRef, useState } from 'react';
 import { useFetcher } from 'react-router';
 import { ChevronDown, Brain, ShieldCheck, ListChecks } from 'lucide-react';
 import Icon from './Icon';
+import OpenCodeModelPicker from './OpenCodeModelPicker';
+import FileAttachments from './FileAttachments';
+import type { FileAttachment } from '../types/files';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -20,6 +25,7 @@ import type { Agent } from '../types/agent';
 
 export default function ChatComposer({
   sessionId,
+  draftId,
   workingDirectory,
   projectId,
   provider = 'codex',
@@ -30,11 +36,14 @@ export default function ChatComposer({
   agents = [],
   disabled = false,
   working = false,
+  canQueue = false,
+  queuePending = false,
   stopping = false,
   connected = true,
   onSend,
 }: {
   sessionId?: string;
+  draftId?: string;
   workingDirectory?: string;
   projectId?: number | null;
   provider?: Agent['provider'];
@@ -45,21 +54,76 @@ export default function ChatComposer({
   agents?: Agent[];
   disabled?: boolean;
   working?: boolean;
+  canQueue?: boolean;
+  queuePending?: boolean;
   stopping?: boolean;
   connected?: boolean;
   onSend?: () => void;
 }) {
-  const [settings, setSettings] = useState<ChatSettings>(
-    initialSettings ?? {
-      model: null,
-      effort: null,
-      permissions: 'workspace-write',
-    },
+  const draftKey = sessionId
+    ? `session:${sessionId}`
+    : draftId
+      ? `draft:${draftId}`
+      : null;
+  const [savedDraft] = useState(() =>
+    draftKey ? readComposerDraft(draftKey, provider) : null,
   );
+  const preferences = useAppSettings();
+  const defaults = chatDefaults(provider, models, preferences);
+  const [customized, setCustomized] = useState(Boolean(savedDraft?.settings));
+  const [settings, setSettings] = useState<ChatSettings>(
+    savedDraft?.settings ??
+      initialSettings ??
+      (sessionId
+        ? { model: null, effort: null, permissions: 'workspace-write' }
+        : defaults.settings),
+  );
+  const defaultsKey = JSON.stringify(defaults.settings);
+  const [previousDefaults, setPreviousDefaults] = useState(defaultsKey);
+  if (previousDefaults !== defaultsKey) {
+    setPreviousDefaults(defaultsKey);
+    if (!sessionId && !customized)
+      setSettings((previous) => ({
+        ...previous,
+        model: defaults.settings.model,
+        effort: defaults.settings.effort,
+      }));
+  }
   const [settingsProvider, setSettingsProvider] = useState(provider);
   const [settingsDirectory, setSettingsDirectory] = useState(workingDirectory);
-  const [agentId, setAgentId] = useState('');
-  const [draft, setDraft] = useState('');
+  const [agentId, setAgentId] = useState(savedDraft?.agentId ?? '');
+  const [draft, setDraft] = useState(savedDraft?.prompt ?? '');
+  const [attachments, setAttachments] = useState<FileAttachment[]>(
+    savedDraft?.attachments ?? [],
+  );
+  const [attachmentBusy, setAttachmentBusy] = useState(false);
+  const settingsDirty =
+    JSON.stringify(settings) !==
+    JSON.stringify(
+      initialSettings ??
+        (sessionId
+          ? { model: null, effort: null, permissions: 'workspace-write' }
+          : defaults.settings),
+    );
+  useEffect(() => {
+    if (draftKey)
+      saveComposerDraft(draftKey, {
+        provider,
+        prompt: draft,
+        settings,
+        agentId,
+        settingsDirty,
+        attachments,
+      });
+  }, [
+    draftKey,
+    provider,
+    draft,
+    settings,
+    agentId,
+    settingsDirty,
+    attachments,
+  ]);
   const [skills, setSkills] = useState<Skill[]>([]);
   const [skillError, setSkillError] = useState('');
   useEffect(() => {
@@ -102,15 +166,22 @@ export default function ChatComposer({
     error?: string;
     sent?: boolean;
     sessionId?: string;
+    draftId?: string;
   }>();
   const stop = useFetcher<{ error?: string }>();
   if (settingsDirectory !== workingDirectory) {
     setSettingsDirectory(workingDirectory);
-    setSettings((previous) => ({ ...previous, model: null, effort: null }));
+    setSettings((previous) => ({
+      ...previous,
+      model: defaults.settings.model,
+      effort: defaults.settings.effort,
+    }));
+    setCustomized(false);
   }
   if (settingsProvider !== provider) {
     setSettingsProvider(provider);
-    setSettings({ model: null, effort: null, permissions: 'workspace-write' });
+    setSettings(defaults.settings);
+    setCustomized(false);
     setAgentId('');
   }
   if (
@@ -120,6 +191,7 @@ export default function ChatComposer({
   ) {
     setCompleted(fetcher.data);
     if (draft === submitted) setDraft('');
+    setAttachments([]);
   }
   useEffect(() => {
     if (fetcher.state === 'idle' && fetcher.data?.sent && composer.current) {
@@ -135,17 +207,25 @@ export default function ChatComposer({
         : 'Codex';
   const model =
     models.find((model) => model.model === settings.model) ??
-    models.find((model) => model.isDefault);
-  const busy = disabled || working || fetcher.state !== 'idle';
+    (provider !== 'opencode' || !settings.model
+      ? models.find((model) => model.isDefault)
+      : undefined);
+  const busy = disabled || (working && !canQueue) || fetcher.state !== 'idle';
   const canSend =
     !disabled &&
-    !working &&
+    (!working || canQueue) &&
     connected &&
     fetcher.state === 'idle' &&
-    Boolean(draft.trim()) &&
+    !attachmentBusy &&
+    Boolean(draft.trim() || attachments.length) &&
     (intent !== 'new-message' || Boolean(workingDirectory?.trim()));
   return (
     <div className="composer-dock mx-auto w-full max-w-3xl shrink-0 px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4">
+      {!sessionId && defaults.notice && !customized && (
+        <p role="status" className="mb-2 text-xs text-muted-foreground">
+          {defaults.notice}
+        </p>
+      )}
       {(fetcher.data?.error || stop.data?.error) && (
         <p
           role="alert"
@@ -167,6 +247,8 @@ export default function ChatComposer({
         }}
       >
         <input type="hidden" name="intent" value={intent} />
+        {draftId && <input type="hidden" name="draftId" value={draftId} />}
+        {canQueue && <input type="hidden" name="delivery" value="queue" />}
         {intent === 'new-message' && (
           <input type="hidden" name="projectId" value={projectId ?? ''} />
         )}
@@ -184,6 +266,18 @@ export default function ChatComposer({
         />
         <input type="hidden" name="provider" value={provider} />
         <input type="hidden" name="settings" value={JSON.stringify(settings)} />
+        <input
+          type="hidden"
+          name="attachments"
+          value={JSON.stringify(attachments)}
+        />
+        <FileAttachments
+          files={attachments}
+          onChange={setAttachments}
+          workingDirectory={workingDirectory}
+          disabled={busy}
+          onBusyChange={setAttachmentBusy}
+        />
         {intent === 'new-message' && (
           <input type="hidden" name="projectId" value={projectId ?? ''} />
         )}
@@ -192,6 +286,7 @@ export default function ChatComposer({
         )}
         <Textarea
           ref={composer}
+          data-chat-composer
           name="prompt"
           aria-label={`Message ${providerName}`}
           placeholder="Ask anything about this project"
@@ -199,7 +294,6 @@ export default function ChatComposer({
           onChange={(event) => setDraft(event.target.value)}
           rows={2}
           maxLength={100000}
-          required
           disabled={disabled}
           className="min-h-16 max-h-48 resize-none rounded-none border-0 bg-transparent px-3 py-3 text-base shadow-none focus-visible:border-transparent focus-visible:ring-0 md:text-base dark:bg-transparent"
           onInput={(event) => {
@@ -208,7 +302,30 @@ export default function ChatComposer({
               Math.min(event.currentTarget.scrollHeight, 192) + 'px';
           }}
           onKeyDown={(event) => {
-            if (event.key === 'Tab' && suggestions.length && !busy) {
+            if (event.nativeEvent.isComposing) return;
+            if (
+              event.key === 'Tab' &&
+              event.shiftKey &&
+              !event.repeat &&
+              !event.altKey &&
+              !event.ctrlKey &&
+              !event.metaKey &&
+              preferences.shortcutsEnabled &&
+              !disabled
+            ) {
+              event.preventDefault();
+              setSettings((previous) => ({
+                ...previous,
+                mode: previous.mode === 'plan' ? 'default' : 'plan',
+              }));
+              return;
+            }
+            if (
+              event.key === 'Tab' &&
+              !event.shiftKey &&
+              suggestions.length &&
+              !busy
+            ) {
               event.preventDefault();
               insertSkill(suggestions[0]);
               return;
@@ -245,30 +362,28 @@ export default function ChatComposer({
         )}
         <div className="flex items-end justify-between gap-1">
           <div className="flex min-w-0 flex-wrap items-center gap-0.5">
-            {provider !== 'opencode' && (
-              <Button
-                type="button"
-                variant={settings.mode === 'plan' ? 'default' : 'ghost'}
-                className="h-8 gap-1 rounded-full px-2.5 text-xs"
-                disabled={busy}
-                aria-label="Plan mode"
-                aria-pressed={settings.mode === 'plan'}
-                title={
-                  settings.mode === 'plan'
-                    ? 'Plan mode on — click to return to execution'
-                    : 'Plan mode off — click to plan before implementation'
-                }
-                onClick={() =>
-                  setSettings((previous) => ({
-                    ...previous,
-                    mode: previous.mode === 'plan' ? 'default' : 'plan',
-                  }))
-                }
-              >
-                <ListChecks className="size-3.5" />
-                Plan
-              </Button>
-            )}
+            <Button
+              type="button"
+              variant={settings.mode === 'plan' ? 'default' : 'ghost'}
+              className="h-8 gap-1 rounded-full px-2.5 text-xs"
+              disabled={busy}
+              aria-label="Plan mode"
+              aria-pressed={settings.mode === 'plan'}
+              title={
+                settings.mode === 'plan'
+                  ? 'Plan mode on — click to return to execution'
+                  : 'Plan mode off — click to plan before implementation'
+              }
+              onClick={() =>
+                setSettings((previous) => ({
+                  ...previous,
+                  mode: previous.mode === 'plan' ? 'default' : 'plan',
+                }))
+              }
+            >
+              <ListChecks className="size-3.5" />
+              Plan
+            </Button>
             {onProviderChange && !fetcher.data?.sessionId && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -359,58 +474,80 @@ export default function ChatComposer({
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  aria-label="Model"
-                  disabled={busy || !models.length}
-                  className="h-8 min-w-0 gap-1 rounded-full px-2.5 text-xs"
+            {provider === 'opencode' ? (
+              <OpenCodeModelPicker
+                models={models}
+                value={settings.model}
+                disabled={busy}
+                onChange={(value) => {
+                  setCustomized(true);
+                  const selected = models.find(
+                    (model) => model.model === value,
+                  );
+                  setSettings({
+                    ...settings,
+                    model: value,
+                    effort: selected?.defaultReasoningEffort || null,
+                  });
+                }}
+              />
+            ) : (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    aria-label="Model"
+                    disabled={busy || !models.length}
+                    className="h-8 min-w-0 gap-1 rounded-full px-2.5 text-xs"
+                  >
+                    <span className="max-w-36 truncate sm:max-w-52">
+                      {model?.displayName ??
+                        settings.model ??
+                        'Provider default'}
+                    </span>
+                    <ChevronDown className="size-3" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  side="top"
+                  align="start"
+                  className="max-h-80 w-64"
                 >
-                  <span className="max-w-36 truncate sm:max-w-52">
-                    {model?.displayName ?? settings.model ?? 'Provider default'}
-                  </span>
-                  <ChevronDown className="size-3" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                side="top"
-                align="start"
-                className="max-h-80 w-64"
-              >
-                <DropdownMenuLabel>Choose a model</DropdownMenuLabel>
-                <DropdownMenuRadioGroup
-                  value={settings.model ?? 'default'}
-                  onValueChange={(value) => {
-                    const selected = models.find(
-                      (model) => model.model === value,
-                    );
-                    setSettings({
-                      ...settings,
-                      model: selected?.model ?? null,
-                      effort: selected?.defaultReasoningEffort || null,
-                    });
-                  }}
-                >
-                  <DropdownMenuRadioItem value="default">
-                    Provider default
-                  </DropdownMenuRadioItem>
-                  {models.map((model) => (
-                    <DropdownMenuRadioItem key={model.id} value={model.model}>
-                      <div className="min-w-0">
-                        <p className="truncate">{model.displayName}</p>
-                        {model.description && (
-                          <p className="line-clamp-2 text-xs text-muted-foreground">
-                            {model.description}
-                          </p>
-                        )}
-                      </div>
+                  <DropdownMenuLabel>Choose a model</DropdownMenuLabel>
+                  <DropdownMenuRadioGroup
+                    value={settings.model ?? 'default'}
+                    onValueChange={(value) => {
+                      setCustomized(true);
+                      const selected = models.find(
+                        (model) => model.model === value,
+                      );
+                      setSettings({
+                        ...settings,
+                        model: selected?.model ?? null,
+                        effort: selected?.defaultReasoningEffort || null,
+                      });
+                    }}
+                  >
+                    <DropdownMenuRadioItem value="default">
+                      Provider default
                     </DropdownMenuRadioItem>
-                  ))}
-                </DropdownMenuRadioGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                    {models.map((model) => (
+                      <DropdownMenuRadioItem key={model.id} value={model.model}>
+                        <div className="min-w-0">
+                          <p className="truncate">{model.displayName}</p>
+                          {model.description && (
+                            <p className="line-clamp-2 text-xs text-muted-foreground">
+                              {model.description}
+                            </p>
+                          )}
+                        </div>
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -435,13 +572,14 @@ export default function ChatComposer({
                 </DropdownMenuLabel>
                 <DropdownMenuRadioGroup
                   value={settings.effort ?? 'default'}
-                  onValueChange={(value) =>
+                  onValueChange={(value) => {
+                    setCustomized(true);
                     setSettings({
                       ...settings,
                       model: settings.model ?? model?.model ?? null,
                       effort: value === 'default' ? null : value,
-                    })
-                  }
+                    });
+                  }}
                 >
                   <DropdownMenuRadioItem value="default">
                     Provider default
@@ -610,7 +748,7 @@ export default function ChatComposer({
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-          {working ? (
+          {working && (
             <Button
               type="button"
               size="icon"
@@ -627,14 +765,20 @@ export default function ChatComposer({
             >
               <Icon name="stop" className="size-3.5 fill-current" />
             </Button>
-          ) : (
+          )}
+          {(!working || Boolean(draft.trim() || attachments.length)) && (
             <Button
               type="submit"
               size="icon"
               className="size-9 rounded-full"
               disabled={!canSend}
+              title={working || queuePending ? 'Queue message' : 'Send message'}
               aria-label={
-                fetcher.state !== 'idle' ? 'Sending message' : 'Send message'
+                fetcher.state !== 'idle'
+                  ? 'Sending message'
+                  : working || queuePending
+                    ? 'Queue message'
+                    : 'Send message'
               }
             >
               <Icon name="send" className="size-5" />

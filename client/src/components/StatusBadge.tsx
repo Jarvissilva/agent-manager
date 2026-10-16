@@ -43,7 +43,6 @@ export default function StatusBadge({ status }: { status: string }) {
           needs_input: 'Needs input',
           error: 'Error',
           queued: 'Queued',
-          terminal: 'Terminal',
         } as Record<string, string>
       )[status] ?? status.replaceAll('_', ' ')}
     </Badge>

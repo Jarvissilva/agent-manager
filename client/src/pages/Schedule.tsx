@@ -107,7 +107,7 @@ export async function scheduleAction({ request, params }: ActionFunctionArgs) {
       return null;
     }
     if (intent !== 'save' && intent !== 'preview')
-      return { error: 'Invalid schedule action.' };
+      return { error: 'Invalid automation action.' };
     const kind = form.get('kind');
     let runAt: string | null = null;
     if (kind === 'once') {
@@ -142,7 +142,7 @@ export async function scheduleAction({ request, params }: ActionFunctionArgs) {
     if (request.signal.aborted) throw error;
     return {
       error:
-        error instanceof Error ? error.message : 'Could not save schedule.',
+        error instanceof Error ? error.message : 'Could not save automation.',
     };
   }
 }
@@ -278,7 +278,7 @@ function ScheduleEditor({
         busy={busy}
       />
       <p className="text-xs leading-5 text-muted-foreground">
-        After downtime, one missed occurrence is queued per schedule. Busy
+        After downtime, one missed occurrence is queued per automation. Busy
         projects queue tasks until free. Pausing does not cancel existing queued
         sessions.
       </p>
@@ -315,7 +315,7 @@ function ScheduleEditor({
       )}
       <div className="flex flex-wrap items-center gap-3 pt-3 [&>a]:text-sm [&>a]:text-muted-foreground [&>a:hover]:text-foreground">
         <Button name="intent" value="save" disabled={busy}>
-          {busy ? 'Saving…' : schedule ? 'Save changes' : 'Create schedule'}
+          {busy ? 'Saving…' : schedule ? 'Save changes' : 'Create automation'}
         </Button>
         <Link to="/schedules">Cancel</Link>
       </div>
@@ -342,13 +342,13 @@ export default function SchedulePage() {
           to={project ? `/schedules?projectId=${project.id}` : '/schedules'}
           className="text-sm text-muted-foreground hover:text-foreground"
         >
-          {project ? `${project.name} / Scheduled` : 'Scheduled'}
+          {project ? `${project.name} / Automations` : 'Automations'}
         </Link>
         <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-          {schedule ? `Edit ${schedule.name}` : 'New schedule'}
+          {schedule ? `Edit ${schedule.name}` : 'New automation'}
         </h1>
         <p className="text-sm leading-6 text-muted-foreground">
-          The local server must be running to start scheduled sessions.
+          The local server must be running to start automations.
         </p>
         {schedule && (
           <p className="text-xs leading-5 text-muted-foreground">
@@ -384,7 +384,7 @@ export default function SchedulePage() {
       </Card>
       {schedule && (
         <Card className="mb-6 space-y-5 rounded-2xl border bg-card/40 p-4">
-          <h2 className="text-base font-semibold">Manage schedule</h2>
+          <h2 className="text-base font-semibold">Manage automation</h2>
           {schedule.completed && (
             <p className="text-sm leading-6 text-muted-foreground">
               Choose a future date to schedule this task again.
@@ -398,12 +398,12 @@ export default function SchedulePage() {
                 disabled={busy || schedule.completed}
                 variant="outline"
               >
-                {schedule.enabled ? 'Pause schedule' : 'Enable schedule'}
+                {schedule.enabled ? 'Pause automation' : 'Enable automation'}
               </Button>
             </Form>
             <DeleteButton
               name={schedule.name}
-              label="Delete schedule"
+              label="Delete automation"
               description="Queued sessions will be cancelled. Active sessions finish, and all history is kept."
               busy={busy}
             />

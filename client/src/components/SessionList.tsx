@@ -31,21 +31,14 @@ export default function SessionList({
                 to={`/sessions/${session.id}`}
                 className="flex min-w-0 flex-1 items-center gap-4 rounded-2xl p-4 hover:bg-muted/50"
               >
-                <Icon
-                  name={session.transport === 'terminal' ? 'terminal' : 'chat'}
-                />
+                <Icon name="chat" />
                 <div className="min-w-0 flex-1">
                   <h3 className="truncate text-sm font-medium">
                     {session.name ?? session.stepName ?? 'New session'}
                   </h3>
                   <p className="mt-1 text-xs text-muted-foreground">
                     {project?.name ?? 'No project'} ·{' '}
-                    {session.source === 'schedule'
-                      ? 'Scheduled'
-                      : session.transport === 'terminal'
-                        ? 'Terminal'
-                        : 'Chat'}{' '}
-                    ·{' '}
+                    {session.source === 'schedule' ? 'Automations' : 'Chat'} ·{' '}
                     {new Date(
                       session.lastResumedAt ??
                         session.scheduledFor ??
@@ -64,12 +57,7 @@ export default function SessionList({
                     </p>
                   )}
                 </div>
-                <StatusBadge
-                  status={
-                    session.activity ??
-                    (session.transport === 'chat' ? 'ready' : 'terminal')
-                  }
-                />
+                <StatusBadge status={session.activity ?? 'ready'} />
                 <Icon name="arrow" className="text-muted-foreground" />
               </Link>
               <Button

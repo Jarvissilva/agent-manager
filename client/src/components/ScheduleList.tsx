@@ -54,7 +54,7 @@ export default function ScheduleList({ schedules }: { schedules: Schedule[] }) {
     </ul>
   ) : (
     <p className="py-10 text-center text-sm text-muted-foreground">
-      No schedules found.
+      No automations found.
     </p>
   );
 }

@@ -1,3 +1,15 @@
+import { readCodexHistory } from '../lib/providers/codex/history.js';
+import {
+  attachmentPrompt,
+  validateAttachments,
+  type FileAttachment,
+} from './files.js';
+import {
+  beginUsage,
+  finishUsage,
+  saveCumulativeUsage,
+  usageSummary,
+} from '../repositories/usage.js';
 import { mentionedSkills, skillCatalogRevision } from './skills.js';
 import { codexSkillInput } from '../lib/providers/codex/skills.js';
 import { EventEmitter } from 'node:events';
@@ -41,6 +53,68 @@ export type ChatRequest = {
   }[];
 };
 
+export function projectCodexItem(
+  raw: unknown,
+  turnId: string,
+  completed: boolean,
+  previous?: ChatItem,
+): ChatItem | undefined {
+  const item = record(raw);
+  const id = text(item.id);
+  const type = text(item.type);
+  if (!id || !type) return;
+  let body: string;
+  let title = type.replace(/([a-z])([A-Z])/g, '$1 $2');
+  let role: ChatItem['role'] = 'activity';
+  if (type === 'userMessage') {
+    role = 'user';
+    title = 'You';
+    body = array(item.content)
+      .map((part) => text(record(part).text))
+      .filter(Boolean)
+      .join('\n');
+  } else if (type === 'agentMessage' || type === 'plan') {
+    role = 'assistant';
+    title = type === 'plan' ? 'Plan' : 'Codex';
+    body = text(item.text);
+  } else if (type === 'commandExecution') {
+    title = text(item.command) || 'Command';
+    body = text(item.aggregatedOutput);
+    if (typeof item.exitCode === 'number')
+      body += `\nExit code: ${item.exitCode}`;
+  } else if (type === 'fileChange') {
+    title = 'File changes';
+    body = array(item.changes)
+      .map((value) => {
+        const change = record(value);
+        return `${text(change.path)}\n${text(change.diff)}`;
+      })
+      .join('\n\n');
+  } else if (type === 'reasoning') {
+    title = 'Thinking';
+    body = array(item.summary).map(text).join('\n');
+    if (!body) return;
+  } else if (type === 'mcpToolCall') {
+    title = `${text(item.server)} · ${text(item.tool)}`;
+    body = JSON.stringify(
+      { arguments: item.arguments, result: item.result, error: item.error },
+      null,
+      2,
+    );
+  } else {
+    body = text(item.text) || JSON.stringify(item, null, 2);
+  }
+  return {
+    id,
+    turnId,
+    type,
+    role,
+    title,
+    text: limit(body || previous?.text || ''),
+    status: text(item.status) || (completed ? 'completed' : 'inProgress'),
+  };
+}
+
 export class ChatSession {
   readonly info: SessionInfo;
   readonly events = new EventEmitter();
@@ -55,6 +129,8 @@ export class ChatSession {
   private flushTimer?: ReturnType<typeof setTimeout>;
   private stopRequested = false;
   private sending = false;
+  private usageModel: string | null = null;
+  private resumedUsage = false;
   private readonly cwd: string;
   private skillRevision = skillCatalogRevision();
 
@@ -65,6 +141,7 @@ export class ChatSession {
   ) {
     this.cwd = cwd;
     this.info = info;
+    this.resumedUsage = Boolean(info.codexConversationId);
     for (const item of listSessionItems(info.id)) this.items.set(item.id, item);
     this.rpc = createAppServer(
       cwd,
@@ -100,6 +177,7 @@ export class ChatSession {
       requests: [...this.requests.values()],
       state: this.state,
       error: this.error,
+      usage: usageSummary(this.info.id),
       settings: this.info.chatSettings ?? defaultChatSettings,
     };
   }
@@ -109,6 +187,7 @@ export class ChatSession {
       state: this.state,
       error: this.error,
       requests: [...this.requests.values()],
+      usage: usageSummary(this.info.id),
       settings: this.info.chatSettings ?? defaultChatSettings,
     });
   }
@@ -127,60 +206,13 @@ export class ChatSession {
     this.events.emit('change', { type: 'item', item });
   }
   private item(raw: unknown, turnId: string, completed: boolean) {
-    const item = record(raw);
-    const id = text(item.id);
-    const type = text(item.type);
-    if (!id || !type) return;
-    let body: string;
-    let title = type.replace(/([a-z])([A-Z])/g, '$1 $2');
-    let role: ChatItem['role'] = 'activity';
-    if (type === 'userMessage') {
-      role = 'user';
-      title = 'You';
-      body = array(item.content)
-        .map((part) => text(record(part).text))
-        .filter(Boolean)
-        .join('\n');
-    } else if (type === 'agentMessage' || type === 'plan') {
-      role = 'assistant';
-      title = type === 'plan' ? 'Plan' : 'Codex';
-      body = text(item.text);
-    } else if (type === 'commandExecution') {
-      title = text(item.command) || 'Command';
-      body = text(item.aggregatedOutput);
-      if (typeof item.exitCode === 'number')
-        body += `\nExit code: ${item.exitCode}`;
-    } else if (type === 'fileChange') {
-      title = 'File changes';
-      body = array(item.changes)
-        .map((value) => {
-          const change = record(value);
-          return `${text(change.path)}\n${text(change.diff)}`;
-        })
-        .join('\n\n');
-    } else if (type === 'reasoning') {
-      title = 'Thinking';
-      body = array(item.summary).map(text).join('\n');
-      if (!body) return;
-    } else if (type === 'mcpToolCall') {
-      title = `${text(item.server)} · ${text(item.tool)}`;
-      body = JSON.stringify(
-        { arguments: item.arguments, result: item.result, error: item.error },
-        null,
-        2,
-      );
-    } else {
-      body = text(item.text) || JSON.stringify(item, null, 2);
-    }
-    this.update({
-      id,
+    const item = projectCodexItem(
+      raw,
       turnId,
-      type,
-      role,
-      title,
-      text: body || this.items.get(id)?.text || '',
-      status: text(item.status) || (completed ? 'completed' : 'inProgress'),
-    });
+      completed,
+      this.items.get(text(record(raw).id)),
+    );
+    if (item) this.update(item);
   }
   private async initialize(cwd: string) {
     await this.rpc.request('initialize', {
@@ -221,34 +253,10 @@ export class ChatSession {
     saveSession(this.info);
     // Resume the provider's saved conversation as well as our locally cached
     // transcript, including conversations originally created in the terminal.
-    if (resumed) {
-      if (thread.historyMode === 'paginated') {
-        let cursor: string | null = null;
-        const seen = new Set<string>();
-        do {
-          const page = await this.rpc.request('thread/items/list', {
-            threadId: id,
-            cursor,
-            limit: 100,
-            sortDirection: 'asc',
-          });
-          for (const entry of array(page.data)) {
-            const value = record(entry);
-            this.item(value.item, text(value.turnId), true);
-          }
-          cursor = text(page.nextCursor) || null;
-          if (cursor && seen.has(cursor))
-            throw Error('Codex returned a repeated history cursor.');
-          if (cursor) seen.add(cursor);
-        } while (cursor);
-      } else {
-        for (const value of array(thread.turns)) {
-          const turn = record(value);
-          for (const item of array(turn.items))
-            this.item(item, text(turn.id), true);
-        }
-      }
-    }
+    if (resumed)
+      await readCodexHistory(this.rpc, thread, (item, turnId, completed) =>
+        this.item(item, turnId, completed),
+      );
     this.flush();
     this.state = 'idle';
     this.changed();
@@ -309,12 +317,28 @@ export class ChatSession {
     if (method === 'serverRequest/resolved') {
       this.requests.delete(String(params.requestId));
       this.changed();
+    } else if (method === 'model/rerouted') {
+      this.usageModel = text(params.toModel) || this.usageModel;
+    } else if (method === 'thread/tokenUsage/updated') {
+      const usage = record(params.tokenUsage);
+      saveCumulativeUsage(
+        this.info,
+        'codex',
+        text(params.turnId),
+        usage.total,
+        usage.last,
+        this.usageModel ?? this.info.chatSettings?.model ?? null,
+        this.resumedUsage,
+      );
+      this.changed();
     } else if (method === 'turn/started') {
       this.turnId = text(record(params.turn).id);
+      beginUsage(this.info, this.turnId, this.usageModel);
       this.state = this.stopRequested ? 'stopping' : 'working';
       this.changed();
     } else if (method === 'turn/completed') {
       const turn = record(params.turn);
+      finishUsage(this.info.id, text(turn.id), turn.status === 'completed');
       for (const item of array(turn.items))
         this.item(item, text(turn.id), true);
       this.error =
@@ -377,13 +401,17 @@ export class ChatSession {
   async send(
     prompt: string,
     settings: ChatSettings = this.info.chatSettings ?? defaultChatSettings,
+    attachments: FileAttachment[] = [],
   ) {
+    const files = await validateAttachments(attachments);
+    const message = attachmentPrompt(prompt, files);
     if (this.state !== 'idle' || this.sending)
       throw new RequestError(
         409,
         'Wait for Codex to finish or stop the current response.',
       );
     this.sending = true;
+    this.usageModel = settings.model ?? this.info.chatSettings?.model ?? null;
     this.state = 'working';
     this.error = null;
     this.changed();
@@ -401,7 +429,14 @@ export class ChatSession {
       const result = await this.rpc.request('turn/start', {
         threadId: this.info.codexConversationId,
         approvalPolicy: settings.approvalPolicy ?? 'on-request',
-        input: codexSkillInput(prompt, mentionedSkills(prompt)),
+        input: [
+          ...codexSkillInput(message, mentionedSkills(prompt)),
+          ...files.map((file) =>
+            file.mime.startsWith('image/')
+              ? { type: 'localImage', path: file.path }
+              : { type: 'mention', name: file.name, path: file.path },
+          ),
+        ],
         collaborationMode: {
           mode: settings.mode ?? 'default',
           settings: {

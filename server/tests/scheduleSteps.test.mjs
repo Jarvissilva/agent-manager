@@ -38,7 +38,7 @@ test(
     );
     const { database } = await import('../src/lib/database.ts');
     const { default: app } = await import('../src/app.ts');
-    const { getSession, shutdownSessions } =
+    const { getSession, getSessionById, shutdownSessions } =
       await import('../src/services/sessions.ts');
     const {
       findSessionById,
@@ -285,14 +285,20 @@ test(
         ).toISOString(),
       });
       await dispatchScheduledSessions();
-      await wait(() => getSession(1).chat.requests.size === 1);
+      await wait(
+        () =>
+          getSessionById(orderedA.id).chat.requests.size === 1 &&
+          getSessionById(orderedB.id).chat.requests.size === 1,
+      );
+      assert.equal(rows(orderedA)[1].status, 'queued');
+      assert.equal(rows(orderedB)[1].status, 'queued');
       await json('POST', `/sessions/${orderedA.id}/requests/approval-1`, {
         decision: 'accept',
       });
-      await pump(() => rows(orderedB)[0].status === 'running');
+      await pump(() => rows(orderedA).every((x) => x.outcome === 'succeeded'));
       assert.ok(rows(orderedA).every((x) => x.outcome === 'succeeded'));
       assert.equal(rows(orderedB)[1].status, 'queued');
-      await wait(() => getSession(1).chat.requests.size === 1);
+      await wait(() => getSessionById(orderedB.id).chat.requests.size === 1);
       await json('POST', `/sessions/${orderedB.id}/cancel`, {});
       await wait(() => rows(orderedB)[0].outcome === 'cancelled');
       const timeout = enqueueSchedule(
@@ -323,7 +329,7 @@ test(
         ['cancelled', 'skipped'],
       );
 
-      // Two occurrences of the same schedule must not interleave; other projects can run.
+      // Independent occurrences can overlap; each occurrence still orders its own steps.
       const overlap = await workflow([step('First', 'wait'), step('Second')], {
         kind: 'cron',
         cron: '* * * * *',
@@ -341,9 +347,11 @@ test(
         await workflow([step('Other')], { projectId: 2 }),
       );
       await pump(() => rows(other)[0].outcome === 'succeeded');
-      assert.ok(rows(occurrenceB).every((x) => x.status === 'queued'));
+      assert.equal(rows(occurrenceB)[0].status, 'running');
+      assert.equal(rows(occurrenceB)[1].status, 'queued');
       await json('POST', `/sessions/${occurrenceA.id}/cancel`, {});
-      await pump(() => rows(occurrenceB)[0].status === 'running');
+      await pump(() => rows(occurrenceA)[1].outcome === 'skipped');
+      assert.equal(rows(occurrenceB)[0].status, 'running');
       assert.equal(rows(occurrenceA)[1].outcome, 'skipped');
       await wait(() => getSession(1).chat.state === 'working');
       stopScheduledSessions();

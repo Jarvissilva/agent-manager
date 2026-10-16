@@ -1,3 +1,19 @@
+import { openCodeHistoryItems } from '../lib/providers/opencode/history.js';
+import {
+  attachmentPrompt,
+  validateAttachments,
+  openCodeAttachments,
+  type FileAttachment,
+} from './files.js';
+import { randomUUID } from 'node:crypto';
+import {
+  beginUsage,
+  finishUsage,
+  normalizeUsage,
+  markUsagePartial,
+  saveUsage,
+  usageSummary,
+} from '../repositories/usage.js';
 import { listSkills, mentionedSkills, skillCatalogRevision } from './skills.js';
 import {
   openCodeSkillPrompt,
@@ -13,6 +29,7 @@ import {
 import {
   modelRef,
   readOpenCodeModels,
+  locationQuery,
 } from '../lib/providers/opencode/models.js';
 import { RequestError } from '../lib/http/errors.js';
 import {
@@ -72,11 +89,13 @@ export class OpenCodeChatSession {
   private timer?: ReturnType<typeof setTimeout>;
   private refreshing?: Promise<void>;
   private seenIdle = new Set<string>();
+  private seenMessageIds = new Set<string>();
   private turnBaseline = new Set<string>();
   private forms = new Map<string, Record<string, unknown>[]>();
   private fragments = new Map<string, Map<string, string>>();
   private closing = false;
   private sending = false;
+  private usageTurnId: string | null = null;
   private dirty = new Set<string>();
   private flushTimer?: ReturnType<typeof setTimeout>;
   readonly info: SessionInfo;
@@ -121,6 +140,7 @@ export class OpenCodeChatSession {
       requests: [...this.requests.values()],
       state: this.state,
       error: this.error,
+      usage: usageSummary(this.info.id),
       settings: this.info.chatSettings ?? defaultChatSettings,
     };
   }
@@ -130,6 +150,7 @@ export class OpenCodeChatSession {
       state: this.state,
       error: this.error,
       requests: [...this.requests.values()],
+      usage: usageSummary(this.info.id),
       settings: this.info.chatSettings ?? defaultChatSettings,
     });
   }
@@ -177,6 +198,7 @@ export class OpenCodeChatSession {
           await this.server.request('/api/session', 'POST', {
             location: { directory: this.cwd },
             title: this.info.agentName ?? 'Agent Manager',
+            agent: settings.mode === 'plan' ? 'plan' : 'build',
             model: modelRef(model.model, settings.effort),
             permissions: permissions(settings, this.cwd),
           })
@@ -210,19 +232,52 @@ export class OpenCodeChatSession {
     this.schedule();
   }
   private async configure(settings: ChatSettings) {
-    await this.server.request(this.path(), 'PATCH', {
-      permissions: permissions(settings, this.cwd),
-    });
     let model = settings.model;
-    if (!model) {
+    if (!model || settings.mode === 'plan') {
       const catalog = await readOpenCodeModels(this.server, this.cwd);
-      model = catalog.find((model) => model.isDefault)?.model ?? null;
+      model ??= catalog.find((model) => model.isDefault)?.model ?? null;
       if (!model)
         throw new RequestError(
           503,
           'No OpenCode model is configured. Connect a model provider in OpenCode, then refresh this page.',
         );
     }
+    const rules = permissions(settings, this.cwd);
+    if (settings.mode === 'plan') {
+      const agents = await this.server.request(
+        '/api/agent' + locationQuery(this.cwd),
+      );
+      const plan = array(agents.data)
+        .map(record)
+        .find((agent) => agent.id === 'plan');
+      if (!plan)
+        throw new RequestError(
+          503,
+          'The OpenCode Plan agent is unavailable. Enable it in OpenCode, then try again.',
+        );
+      // Session permissions override agent permissions. Preserve native Plan edit
+      // restrictions (including its plan-directory exception) after our rules.
+      if (settings.permissions !== 'read-only') {
+        for (const rule of array(plan.permissions).map(record)) {
+          if (
+            rule.action === 'edit' &&
+            typeof rule.resource === 'string' &&
+            (rule.effect === 'allow' ||
+              rule.effect === 'deny' ||
+              rule.effect === 'ask')
+          )
+            rules.push({
+              action: 'edit',
+              resource: rule.resource,
+              effect: rule.effect,
+            });
+        }
+      }
+    }
+    await this.server.request(this.path(), 'PATCH', { permissions: rules });
+    await this.server.request(this.path('/agent'), 'POST', {
+      agent: settings.mode === 'plan' ? 'plan' : 'build',
+    });
     await this.server.request(this.path('/model'), 'POST', {
       model: modelRef(model, settings.effort),
     });
@@ -301,79 +356,62 @@ export class OpenCodeChatSession {
     do {
       const query = new URLSearchParams({
         limit: '100',
-        order: 'asc',
-        ...(cursor ? { cursor } : {}),
+        // Continuation cursors carry the ordering; OpenCode rejects both together.
+        ...(cursor ? { cursor } : { order: 'asc' }),
       });
       const page = await this.server.request(this.path('/message?' + query));
       for (const raw of array(page.data)) {
         const message = record(raw);
         const id = text(message.id);
+        this.seenMessageIds.add(id);
+        if (
+          !initial &&
+          this.usageTurnId &&
+          !this.turnBaseline.has(id) &&
+          (message.type === 'assistant' || message.type === 'compaction')
+        ) {
+          const model = record(message.model);
+          const modelName =
+            text(model.providerID) && text(model.id)
+              ? `${text(model.providerID)}/${text(model.id)}`
+              : (this.info.chatSettings?.model ?? null);
+          const counters = normalizeUsage('opencode', message.tokens);
+          if (
+            counters.total === null &&
+            (record(message.time).completed ||
+              message.status === 'completed' ||
+              message.status === 'failed')
+          )
+            markUsagePartial(this.info.id, this.usageTurnId);
+          saveUsage(
+            this.info,
+            id,
+            this.usageTurnId,
+            counters,
+            message.tokens ?? {},
+            modelName,
+          );
+        }
         if (message.type === 'idle') {
           if (!initial && !this.seenIdle.has(id))
             outcome = text(message.outcome);
           this.seenIdle.add(id);
-        } else if (message.type === 'user') {
-          this.update({
-            id,
-            turnId: id,
-            type: 'userMessage',
-            role: 'user',
-            title: 'You',
-            text: text(message.text),
-            status: 'completed',
-          });
-        } else if (message.type === 'assistant') {
-          const content = array(message.content).map(record);
-          const status = message.error
-            ? 'failed'
-            : record(message.time).completed
-              ? 'completed'
-              : 'inProgress';
-          for (const reasoning of [false, true]) {
-            const parts = content.filter(
-              (part) => part.type === (reasoning ? 'reasoning' : 'text'),
-            );
-            const key = id + (reasoning ? '-reasoning' : '');
+        } else {
+          for (const item of openCodeHistoryItems(message)) {
+            const streamed =
+              item.type === 'agentMessage' || item.type === 'reasoning';
             if (
-              parts.length &&
-              (status !== 'inProgress' || !this.fragments.has(key))
+              streamed &&
+              item.status === 'inProgress' &&
+              this.fragments.has(item.id)
             )
-              this.update({
-                id: key,
-                turnId: id,
-                type: reasoning ? 'reasoning' : 'agentMessage',
-                role: reasoning ? 'activity' : 'assistant',
-                title: reasoning ? 'Reasoning' : 'OpenCode',
-                text: parts.map((part) => text(part.text)).join(''),
-                status,
-              });
-            if (status !== 'inProgress') this.fragments.delete(key);
-          }
-          for (const tool of content.filter((part) => part.type === 'tool')) {
-            const state = record(tool.state);
-            const input = record(state.input);
-            this.update({
-              id: `${id}-${text(tool.id)}`,
-              turnId: id,
-              type: tool.name === 'shell' ? 'commandExecution' : 'tool',
-              role: 'activity',
-              title: text(input.command) || text(tool.name) || 'Tool',
-              text:
-                array(state.content)
-                  .map(record)
-                  .map((part) => text(part.text))
-                  .join('\n') ||
-                text(record(state.error).message) ||
-                JSON.stringify(state.input ?? {}),
-              status:
-                state.status === 'completed'
-                  ? 'completed'
-                  : state.status === 'error'
-                    ? 'failed'
-                    : 'inProgress',
-            });
+              continue;
+            this.update(item);
+            if (streamed && item.status !== 'inProgress')
+              this.fragments.delete(item.id);
           }
           if (
+            message.type === 'assistant' &&
             message.error &&
             !initial &&
             !this.turnBaseline.has(id) &&
@@ -441,6 +479,12 @@ export class OpenCodeChatSession {
       });
     }
     if (outcome && (this.state === 'working' || this.state === 'stopping')) {
+      if (this.usageTurnId)
+        finishUsage(
+          this.info.id,
+          this.usageTurnId,
+          outcome === 'succeeded' || outcome === 'completed',
+        );
       if (outcome === 'failed')
         this.error ??= 'OpenCode did not complete this response.';
       for (const item of this.items.values())
@@ -459,7 +503,11 @@ export class OpenCodeChatSession {
     }
     this.changed();
   }
-  async send(prompt: string, settings?: ChatSettings) {
+  async send(
+    prompt: string,
+    settings?: ChatSettings,
+    attachments: FileAttachment[] = [],
+  ) {
     await this.ready;
     if (this.state !== 'idle' || this.sending)
       throw new RequestError(409, 'Wait for the current response to finish.');
@@ -467,6 +515,8 @@ export class OpenCodeChatSession {
     try {
       const selected =
         settings ?? this.info.chatSettings ?? defaultChatSettings;
+      const files = await validateAttachments(attachments);
+      const nativeFiles = await openCodeAttachments(files);
       const revision = skillCatalogRevision();
       if (revision !== this.skillRevision) {
         // OpenCode caches discovered skill bodies. Rebuild this idle server's
@@ -493,13 +543,18 @@ export class OpenCodeChatSession {
       await this.refresh();
       await this.configure(selected);
       this.error = null;
-      this.turnBaseline = new Set(
-        [...this.items.values()].map((item) => item.turnId),
-      );
+      this.turnBaseline = new Set(this.seenMessageIds);
+      this.usageTurnId = randomUUID();
+      beginUsage(this.info, this.usageTurnId, selected.model);
+      this.info.chatSettings = selected;
       this.state = 'working';
       this.changed();
       await this.server.request(this.path('/prompt'), 'POST', {
-        text: openCodeSkillPrompt(prompt, mentionedSkills(prompt)),
+        text: openCodeSkillPrompt(
+          attachmentPrompt(prompt, files),
+          mentionedSkills(prompt),
+        ),
+        ...(nativeFiles.length ? { files: nativeFiles } : {}),
       });
       this.info.chatSettings = selected;
       saveSession(this.info);

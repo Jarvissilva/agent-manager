@@ -3,11 +3,10 @@ import { execFileSync } from 'node:child_process';
 import { once } from 'node:events';
 import { request as httpRequest } from 'node:http';
 import { existsSync } from 'node:fs';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
-import WebSocket from 'ws';
 
 // Use node:http so the reverse proxy's Host header is preserved in these fixtures.
 const fetch = (url, options = {}) =>
@@ -34,7 +33,7 @@ const fetch = (url, options = {}) =>
   });
 
 test(
-  'private remote origin, frontend routes and terminal WebSockets',
+  'private remote origin, frontend routes and chat sessions',
   { timeout: 15000 },
   async (context) => {
     const directory = await mkdtemp(join(tmpdir(), 'manager-remote-'));
@@ -53,21 +52,15 @@ test(
     await mkdir(join(directory, 'bin'));
     await writeFile(
       join(directory, 'bin/codex'),
-      `#!${process.execPath}
-console.log('REMOTE_READY');process.stdin.on('data',data=>console.log('ECHO:'+data.toString()));
-`,
+      `#!${process.execPath}\n${(await readFile(new URL('./fixtures/codex.cjs', import.meta.url), 'utf8')).replace(/^#!.*\n/, '')}`,
       { mode: 0o755 },
     );
     const { default: app } = await import('../src/app.ts');
     const { database } = await import('../src/lib/database.ts');
     const { isAllowedOrigin } =
       await import('../src/lib/security/requestOrigin.ts');
-    const { getSession, shutdownSessions } =
-      await import('../src/services/sessions.ts');
-    const { attachTerminal } = await import('../src/lib/terminal/websocket.ts');
+    const { shutdownSessions } = await import('../src/services/sessions.ts');
     const server = app.listen(0, '127.0.0.1');
-    const sockets = attachTerminal(server);
-    const peers = [];
     await once(server, 'listening');
     const base = `http://127.0.0.1:${server.address().port}`;
     const remoteHeaders = {
@@ -75,27 +68,6 @@ console.log('REMOTE_READY');process.stdin.on('data',data=>console.log('ECHO:'+da
       Origin: publicOrigin,
       'Content-Type': 'application/json',
     };
-    const wait = async (fn) => {
-      const deadline = Date.now() + 5000;
-      while (!fn()) {
-        if (Date.now() > deadline) throw Error('Timed out');
-        await new Promise((r) => setTimeout(r, 10));
-      }
-    };
-    const rejectSocket = (path, headers) =>
-      new Promise((resolve, reject) => {
-        const socket = new WebSocket(base.replace('http', 'ws') + path, {
-          headers,
-        });
-        peers.push(socket);
-        socket.on('error', () => {});
-        socket.once('open', () => reject(Error('Unexpected WebSocket access')));
-        socket.once('unexpected-response', (_request, response) => {
-          response.resume();
-          socket.terminate();
-          resolve(response.statusCode);
-        });
-      });
     try {
       assert.equal(
         isAllowedOrigin({
@@ -233,47 +205,38 @@ console.log('REMOTE_READY');process.stdin.on('data',data=>console.log('ECHO:'+da
       );
       assert.equal(started.status, 201);
       const { session } = await started.json();
-      const path = `/api/sessions/${session.id}/terminal`;
+      assert.equal(session.transport, 'chat');
+      const path = `/api/sessions/${session.id}/messages`;
       assert.equal(
-        await rejectSocket(path, {
-          ...remoteHeaders,
-          Origin: 'https://evil.invalid',
-        }),
+        (
+          await fetch(base + path, {
+            method: 'POST',
+            headers: { ...remoteHeaders, Origin: 'https://evil.invalid' },
+            body: JSON.stringify({ prompt: 'blocked' }),
+          })
+        ).status,
         403,
       );
       assert.equal(
-        await rejectSocket(path, { Host: 'fixture.example.ts.net' }),
-        403,
+        (
+          await fetch(base + path, {
+            method: 'POST',
+            headers: remoteHeaders,
+            body: JSON.stringify({ prompt: 'remote chat input' }),
+          })
+        ).status,
+        202,
       );
       assert.equal(
-        await rejectSocket(path, {
-          ...remoteHeaders,
-          Host: 'other.example.ts.net',
-        }),
-        403,
-      );
-      const socket = new WebSocket(base.replace('http', 'ws') + path, {
-        headers: remoteHeaders,
-      });
-      peers.push(socket);
-      const messages = [];
-      socket.on('message', (raw) => messages.push(JSON.parse(raw.toString())));
-      await once(socket, 'open');
-      await wait(() => messages.some((m) => m.data?.includes('REMOTE_READY')));
-      socket.send(JSON.stringify({ type: 'resize', cols: 132, rows: 42 }));
-      await wait(
-        () =>
-          getSession(project.id).terminal.cols === 132 &&
-          getSession(project.id).terminal.rows === 42,
-      );
-      socket.send(JSON.stringify({ type: 'input', data: 'remote-input\r' }));
-      await wait(() =>
-        messages.some((m) => m.data?.includes('ECHO:remote-input')),
+        (
+          await fetch(base + `/api/sessions/${session.id}/terminal`, {
+            headers: remoteHeaders,
+          })
+        ).status,
+        404,
       );
     } finally {
-      for (const socket of peers) socket.terminate();
       await shutdownSessions();
-      sockets.close();
       server.closeAllConnections();
       await new Promise((resolve, reject) =>
         server.close((e) => (e ? reject(e) : resolve())),

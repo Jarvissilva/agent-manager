@@ -1,3 +1,9 @@
+import { attachChatQueue } from './chatQueue.js';
+import {
+  recoverChatQueues,
+  pauseChatQueue,
+  supportsChatQueue,
+} from '../repositories/chatQueue.js';
 import { skillInstructions } from './skills.js';
 import { sessionActivity } from '../lib/sessionActivity.js';
 import { OpenCodeChatSession } from './opencodeChat.js';
@@ -7,10 +13,8 @@ import { AntigravityChatSession } from './antigravityChat.js';
 import type { AgentProvider } from '../lib/providers/types.js';
 import { defaultChatSettings, type ChatSettings } from './chatSettings.js';
 import { EventEmitter, once } from 'node:events';
-import { spawn, type IPty } from 'node-pty';
 import type { ChildProcess } from 'node:child_process';
 import {
-  queuedSessionCount,
   insertSession,
   saveSession,
   listUnfinishedSessions,
@@ -25,28 +29,19 @@ import {
 import type { Agent } from './agents.js';
 import { RequestError } from '../lib/http/errors.js';
 import {
-  createCodexLogDirectory,
   readCodexConversationId,
   removeCodexLogDirectory,
 } from '../lib/providers/codex/conversation.js';
 
 type Session = {
   info: SessionInfo;
-  terminal?: IPty;
   process?: ChildProcess;
   events: EventEmitter;
-  output: string;
   killTimer?: ReturnType<typeof setTimeout>;
-  captureTimer?: ReturnType<typeof setInterval>;
   chat?: ChatSession | AntigravityChatSession | OpenCodeChatSession;
 };
 
 const sessions = new Map<string, Session>();
-const maxOutputCharacters = 1024 * 1024;
-export function projectBusy(projectId: number | null) {
-  const session = projectId === null ? undefined : getSession(projectId);
-  return Boolean(session && session.info.status !== 'exited');
-}
 for (const row of listUnfinishedSessions()) {
   if (row.provider !== 'codex') continue;
   const id = String(row.id);
@@ -63,21 +58,7 @@ for (const row of listUnfinishedSessions()) {
 }
 
 recoverSessionHistory();
-
-function captureConversation(session: Session) {
-  if (session.info.codexConversationId) return;
-  try {
-    const id = readCodexConversationId(session.info.id);
-    if (!id) return;
-    session.info.codexConversationId = id;
-    saveSession(session.info);
-    clearInterval(session.captureTimer);
-    session.events.emit('status', session.info);
-  } catch (error) {
-    clearInterval(session.captureTimer);
-    console.error('Could not capture Codex conversation ID:', error);
-  }
-}
+recoverChatQueues();
 
 export function getSession(projectId: number) {
   return (
@@ -163,28 +144,15 @@ export function startSession(
   cwd: string,
   resume?: SessionInfo,
   agent?: Agent,
-  transport: 'terminal' | 'chat' = 'terminal',
+  transport: 'chat' = 'chat',
   settings?: ChatSettings,
   provider: AgentProvider = resume?.provider ?? agent?.provider ?? 'codex',
 ) {
   cwd = resume?.workingDirectory ?? cwd;
-  const existing =
-    projectId !== null
-      ? getSession(projectId)
-      : resume
-        ? getSessionById(resume.id)
-        : undefined;
+  const existing = resume ? getSessionById(resume.id) : undefined;
   if (existing && existing.info.status !== 'exited') {
-    throw new Error('A session is already running for this project.');
+    throw new RequestError(409, 'This conversation is already open.');
   }
-  if (
-    projectId !== null &&
-    resume?.status !== 'queued' &&
-    queuedSessionCount(projectId)
-  )
-    throw new Error(
-      'This project has queued sessions. Wait for them to finish or cancel them.',
-    );
 
   // Keep active runtimes and the latest ended runtime in each grouping.
   for (const [id, session] of sessions) {
@@ -226,142 +194,63 @@ export function startSession(
         }
       : {}),
   };
-  if (provider !== 'codex' && transport !== 'chat')
-    throw new Error('This provider uses chat.');
+  if (transport !== 'chat')
+    throw new RequestError(400, 'Only chat sessions are supported.');
   if (resume) {
     saveSession(info);
   } else {
     insertSession(info);
   }
-  if (transport === 'chat') {
-    const session: Session = { info, events: new EventEmitter(), output: '' };
-    sessions.set(info.id, session);
-    const onClose = (exitCode: number | null) => {
-      const stopped = info.status === 'stopping';
-      signalSession(session, 'SIGKILL');
-      clearTimeout(session.killTimer);
-      info.status = 'exited';
-      info.exitCode = exitCode;
-      if (info.source !== 'schedule') {
-        info.error = stopped ? null : (session.chat?.error ?? null);
-        info.outcome = stopped
-          ? 'cancelled'
-          : info.error || exitCode
-            ? 'failed'
-            : null;
-      }
-      info.endedAt = new Date().toISOString();
-      saveSession(info);
-      session.events.emit('exit', info);
-    };
-    session.chat =
-      provider === 'opencode'
-        ? new OpenCodeChatSession(info, cwd, onClose)
-        : provider === 'antigravity'
-          ? new AntigravityChatSession(info, cwd, onClose)
-          : new ChatSession(info, cwd, onClose);
-    session.chat.events.on(
-      'change',
-      (event: { type: string; error?: string | null; state?: string }) => {
-        if (event.type !== 'state') return;
-        const error =
-          info.status === 'stopping' && event.state === 'closed'
-            ? null
-            : (event.error ?? null);
-        if (info.error !== error) {
-          info.error = error;
-          saveSession(info);
-        }
-      },
-    );
-    if (session.chat instanceof ChatSession)
-      session.process = session.chat.rpc.child;
-    return session;
-  }
-  let terminal: IPty;
-  try {
-    const directory = createCodexLogDirectory(info.id);
-    const args = info.codexConversationId
-      ? ['resume', info.codexConversationId]
-      : [];
-    args.push(
-      '--no-daemon',
-      '--cd',
-      cwd,
-      '-c',
-      `log_dir=${JSON.stringify(directory)}`,
-    );
-    if (info.agentInstructions)
-      args.push(
-        '-c',
-        `developer_instructions=${JSON.stringify(info.agentInstructions)}`,
-      );
-    terminal = spawn('codex', args, {
-      cwd,
-      name: 'xterm-256color',
-      cols: 80,
-      rows: 24,
-      env: {
-        ...process.env,
-        TERM: 'xterm-256color',
-        COLORTERM: 'truecolor',
-        RUST_LOG: `${process.env.RUST_LOG ?? 'warn'},codex_core::session=info`,
-      },
-    });
-  } catch (error) {
-    if (resume) {
-      saveSession(resume);
-    } else {
-      info.status = 'exited';
-      info.endedAt = new Date().toISOString();
-      saveSession(info);
-    }
-    removeCodexLogDirectory(info.id);
-    throw error;
-  }
-  const session: Session = {
-    info,
-    terminal,
-    events: new EventEmitter(),
-    output: '',
-  };
+  const session: Session = { info, events: new EventEmitter() };
   sessions.set(info.id, session);
-  if (!info.codexConversationId) {
-    session.captureTimer = setInterval(() => captureConversation(session), 250);
-    session.captureTimer.unref();
-  }
-
-  terminal.onData((data) => {
-    session.output = (session.output + data).slice(-maxOutputCharacters);
-    session.events.emit('output', data);
-  });
-  terminal.onExit(({ exitCode }) => {
-    clearInterval(session.captureTimer);
-    captureConversation(session);
-    if (session.info.status === 'stopping') {
-      signalSession(session, 'SIGKILL');
-    }
+  const onClose = (exitCode: number | null) => {
+    const stopped = info.status === 'stopping';
+    signalSession(session, 'SIGKILL');
     clearTimeout(session.killTimer);
-    session.info.status = 'exited';
-    session.info.exitCode = exitCode;
-    session.info.endedAt = new Date().toISOString();
-    saveSession(session.info);
-    try {
-      removeCodexLogDirectory(info.id);
-    } catch (error) {
-      console.error('Could not remove Codex log directory:', error);
+    info.status = 'exited';
+    info.exitCode = exitCode;
+    if (info.source !== 'schedule') {
+      info.error = stopped ? null : (session.chat?.error ?? null);
+      info.outcome = stopped
+        ? 'cancelled'
+        : info.error || exitCode
+          ? 'failed'
+          : null;
     }
-    session.events.emit('exit', session.info);
-  });
-
+    info.endedAt = new Date().toISOString();
+    saveSession(info);
+    session.events.emit('exit', info);
+  };
+  session.chat =
+    provider === 'opencode'
+      ? new OpenCodeChatSession(info, cwd, onClose)
+      : provider === 'antigravity'
+        ? new AntigravityChatSession(info, cwd, onClose)
+        : new ChatSession(info, cwd, onClose);
+  session.chat.events.on(
+    'change',
+    (event: { type: string; error?: string | null; state?: string }) => {
+      if (event.type !== 'state') return;
+      const error =
+        info.status === 'stopping' && event.state === 'closed'
+          ? null
+          : (event.error ?? null);
+      if (info.error !== error) {
+        info.error = error;
+        saveSession(info);
+      }
+    },
+  );
+  attachChatQueue(session.chat);
+  if (session.chat instanceof ChatSession)
+    session.process = session.chat.rpc.child;
   return session;
 }
 
 function signalSession(session: Session, signal: NodeJS.Signals) {
   try {
-    // A Unix PTY owns a process group; stop its children along with Codex.
+    // Provider processes own a group; stop their tool children as well.
     const pid =
-      session.terminal?.pid ??
       session.process?.pid ??
       (session.chat instanceof AntigravityChatSession ||
       session.chat instanceof OpenCodeChatSession
@@ -380,9 +269,12 @@ function signalSession(session: Session, signal: NodeJS.Signals) {
 }
 
 export function stopSession(session: Session) {
-  if (session.info.status !== 'running') {
-    return;
-  }
+  if (session.info.status !== 'running') return;
+  if (supportsChatQueue(session.info))
+    pauseChatQueue(
+      session.info.id,
+      'Session ended. Resume the session before continuing its queue.',
+    );
 
   session.info.status = 'stopping';
   if (

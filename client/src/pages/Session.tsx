@@ -1,3 +1,4 @@
+import { readBrowserStorage, writeBrowserStorage } from '../lib/sessionTabs';
 import RenameSessionDialog from '../components/RenameSessionDialog';
 import DeleteSessionDialog from '../components/DeleteSessionDialog';
 import WorkingDirectoryField from '../components/WorkingDirectoryField';
@@ -21,7 +22,6 @@ import type { Agent } from '../types/agent';
 import type { Session as SessionInfo } from '../types/session';
 import type { ProviderModel } from '../types/chat';
 import SessionChat from '../components/SessionChat';
-import SessionTerminal from '../components/SessionTerminal';
 import ChatComposer from '../components/ChatComposer';
 import Icon from '../components/Icon';
 import StatusBadge from '../components/StatusBadge';
@@ -56,13 +56,6 @@ export async function sessionLoader({ params, request }: LoaderFunctionArgs) {
   const project = projects.find((project) => project.id === projectId) ?? null;
   if (projectId !== null && !project)
     throw new Response('Project not found.', { status: 404 });
-  const projectState = project
-    ? await api<{ session: SessionInfo | null; queuedSessionCount: number }>(
-        `/projects/${project.id}/session`,
-        request.signal,
-      )
-    : { session: selected, queuedSessionCount: 0 };
-  const sessions = { ...projectState, sessions: history };
   const current = selected;
   const provider =
     current?.provider ??
@@ -104,7 +97,8 @@ export async function sessionLoader({ params, request }: LoaderFunctionArgs) {
   return {
     project,
     projects,
-    ...sessions,
+    session: selected,
+    sessions: history,
     agents,
     provider,
     workingDirectory,
@@ -117,6 +111,14 @@ export async function sessionAction({ params, request }: ActionFunctionArgs) {
   const intent = form.get('intent');
   let sessionId = String(params.sessionId ?? form.get('sessionId') ?? '');
   try {
+    if (intent === 'queue') {
+      await api(`/sessions/${sessionId}/queue`, request.signal, 'PATCH', {
+        action: form.get('queueAction'),
+        id: form.get('entryId'),
+        prompt: form.get('prompt'),
+      });
+      return { queueUpdated: true };
+    }
     if (intent === 'rename') {
       await api(`/sessions/${sessionId}`, request.signal, 'PATCH', {
         name: form.get('name'),
@@ -200,8 +202,15 @@ export async function sessionAction({ params, request }: ActionFunctionArgs) {
       await api(`/sessions/${sessionId}/messages`, request.signal, 'POST', {
         prompt: form.get('prompt'),
         settings,
+        attachments: form.get('attachments')
+          ? JSON.parse(String(form.get('attachments')))
+          : [],
+        ...(form.get('delivery') === 'queue' ? { delivery: 'queue' } : {}),
       });
-      if (intent !== 'message') return redirect(`/sessions/${sessionId}`);
+      if (intent !== 'message')
+        return redirect(
+          `/sessions/${sessionId}${intent === 'new-message' && form.get('draftId') ? `?replaceDraft=${encodeURIComponent(String(form.get('draftId')))}` : ''}`,
+        );
     }
     return { sent: intent === 'message' };
   } catch (error) {
@@ -223,17 +232,25 @@ export default function Session() {
   const { sessionId } = useParams();
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [view, setView] = useState<'chat' | 'terminal'>('chat');
   const control = useFetcher<{ error?: string }>();
-  const [directory, setDirectory] = useState(data.workingDirectory);
+  const draftId = search.get('draft') ?? undefined;
+  const initialDirectory =
+    (!sessionId && draftId
+      ? readBrowserStorage(`agent-manager:folder:${draftId}`)
+      : null) ?? data.workingDirectory;
+  const [directory, setDirectory] = useState(initialDirectory);
+  useEffect(() => {
+    if (!sessionId && draftId)
+      writeBrowserStorage(`agent-manager:folder:${draftId}`, directory);
+  }, [sessionId, draftId, directory]);
   const catalog = useFetcher<typeof sessionLoader>();
   const load = catalog.load;
-  const requestedDirectory = `${data.project?.id ?? 'none'}:${sessionId ?? 'new'}:${search.get('workingDirectory') ?? ''}`;
+  const requestedDirectory = `${data.project?.id ?? 'none'}:${sessionId ?? 'new'}:${search.get('workingDirectory') ?? ''}:${draftId ?? ''}`;
   const [previousDirectory, setPreviousDirectory] =
     useState(requestedDirectory);
   if (previousDirectory !== requestedDirectory) {
     setPreviousDirectory(requestedDirectory);
-    setDirectory(data.workingDirectory);
+    setDirectory(initialDirectory);
   }
   useEffect(() => {
     if (!directory.trim() || sessionId) return;
@@ -261,13 +278,10 @@ export default function Session() {
       : data.provider === 'antigravity'
         ? 'Antigravity'
         : 'Codex';
-  const selected =
-    data.sessions.find((session) => session.id === sessionId) ?? null;
-  const running =
-    data.session && !['exited', 'interrupted'].includes(data.session.status);
-  const active =
-    selected?.id === data.session?.id && selected?.status === 'running';
-  const blocked = Boolean(!active && (data.queuedSessionCount || running));
+  const selected = data.session;
+  const active = selected?.status === 'running';
+  const blocked =
+    selected?.status === 'queued' || selected?.status === 'stopping';
   const canContinue = Boolean(
     (selected?.providerConversationId ?? selected?.codexConversationId) &&
     ['exited', 'interrupted'].includes(selected.status) &&
@@ -322,20 +336,30 @@ export default function Session() {
                     {workingDirectory || 'Choose a working folder'}
                   </dd>
                 </div>
+                {selected && (
+                  <div>
+                    <dt className="text-xs text-muted-foreground">
+                      Token usage
+                    </dt>
+                    <dd className="mt-1">
+                      <Link
+                        className="underline"
+                        to={`/usage?sessionId=${selected.id}`}
+                      >
+                        {selected.usage?.total == null
+                          ? 'Unavailable'
+                          : `${selected.usage.total.toLocaleString()} tokens${selected.usage.coverage === 'partial' ? ' · partial' : ''}`}
+                      </Link>
+                    </dd>
+                  </div>
+                )}
               </dl>
             </DropdownMenuContent>
           </DropdownMenu>
           <span className="hidden truncate text-xs text-muted-foreground sm:block">
             {selected?.agentName ?? providerName}
           </span>
-          {selected && (
-            <StatusBadge
-              status={
-                selected.activity ??
-                (selected.transport === 'chat' ? 'ready' : 'terminal')
-              }
-            />
-          )}
+          {selected && <StatusBadge status={selected.activity ?? 'ready'} />}
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <DropdownMenu>
@@ -354,11 +378,7 @@ export default function Session() {
               {history.length ? (
                 history.map((session) => (
                   <DropdownMenuItem asChild key={session.id}>
-                    <Link
-                      to={`/sessions/${session.id}`}
-                      onClick={() => setView('chat')}
-                      className="flex gap-3"
-                    >
+                    <Link to={`/sessions/${session.id}`} className="flex gap-3">
                       <Icon name="chat" />
                       <div className="min-w-0">
                         <p className="truncate">
@@ -384,7 +404,6 @@ export default function Session() {
             <Link
               to={`/sessions/new${data.project ? `?projectId=${data.project.id}` : ''}`}
               aria-label="New chat"
-              onClick={() => setView('chat')}
             >
               <SquarePen />
             </Link>
@@ -412,19 +431,7 @@ export default function Session() {
                   <Trash2 className="size-4" />
                   Delete session
                 </DropdownMenuItem>
-                {selected.transport === 'chat' && (
-                  <DropdownMenuItem
-                    onSelect={() =>
-                      setView(view === 'chat' ? 'terminal' : 'chat')
-                    }
-                  >
-                    <Icon name={view === 'chat' ? 'terminal' : 'chat'} />
-                    {view === 'chat'
-                      ? 'View terminal output'
-                      : 'Back to conversation'}
-                  </DropdownMenuItem>
-                )}
-                {running && selected.id === data.session?.id && (
+                {active && (
                   <DropdownMenuItem
                     variant="destructive"
                     disabled={
@@ -460,13 +467,12 @@ export default function Session() {
           onClose={() => setDeleting(false)}
         />
       )}
-      {(control.data?.error || data.queuedSessionCount > 0) && (
+      {control.data?.error && (
         <p
           className="mx-auto w-full max-w-3xl px-3 py-2 sm:px-4 text-sm text-amber-300"
           role="status"
         >
-          {control.data?.error ||
-            'Queued sessions must finish before a new chat can start.'}
+          {control.data.error}
         </p>
       )}
       {selected?.source === 'schedule' && (
@@ -475,14 +481,14 @@ export default function Session() {
           role="status"
         >
           <span>
-            {selected.scheduleName ?? 'Deleted schedule'}
+            {selected.scheduleName ?? 'Deleted automation'}
             {selected.stepName
               ? ` · ${(selected.stepIndex ?? 0) + 1}. ${selected.stepName}`
               : ''}{' '}
             ·{' '}
             {selected.outcome
               ? selected.outcome.replaceAll('_', ' ')
-              : 'Scheduled session'}
+              : 'Automation session'}
             {selected.scheduledFor
               ? ` · ${new Date(selected.scheduledFor).toLocaleString()}`
               : ''}
@@ -516,6 +522,14 @@ export default function Session() {
             continue.
           </p>
         )}
+      {search.get('defaultsNotice') && (
+        <p
+          role="status"
+          className="mx-auto w-full max-w-3xl px-4 text-xs text-muted-foreground"
+        >
+          {search.get('defaultsNotice')}
+        </p>
+      )}
       {data.error && (
         <p
           className="mx-auto w-full max-w-3xl px-3 py-2 sm:px-4 text-xs text-muted-foreground"
@@ -524,7 +538,7 @@ export default function Session() {
           {data.error}
         </p>
       )}
-      {selected?.transport === 'chat' ? (
+      {selected ? (
         <SessionChat
           key={`${selected.id}:${selected.lastResumedAt ?? selected.startedAt}`}
           sessionId={selected.id}
@@ -532,37 +546,13 @@ export default function Session() {
           provider={data.provider}
           models={data.models}
           settings={selected.chatSettings}
+          savedQueue={selected.queue}
+          queueEnabled={
+            selected.source !== 'schedule' || Boolean(selected.lastResumedAt)
+          }
           canContinue={canContinue}
           blocked={blocked}
-          view={view}
         />
-      ) : selected ? (
-        <div className="flex min-h-0 flex-1 flex-col p-3">
-          {active ? (
-            <SessionTerminal sessionId={selected.id} />
-          ) : (
-            <div className="flex flex-1 flex-col items-center justify-center gap-5 text-center">
-              <Icon name="chat" className="size-8" />
-              <h1 className="text-2xl font-medium">
-                Continue this conversation
-              </h1>
-              <p className="text-sm text-muted-foreground">
-                Your saved session will reopen in chat.
-              </p>
-              <control.Form method="post">
-                <input type="hidden" name="sessionId" value={selected.id} />
-                <Button
-                  name="intent"
-                  value="resume"
-                  disabled={!canContinue || control.state !== 'idle'}
-                >
-                  Resume in chat
-                  <Icon name="arrow" />
-                </Button>
-              </control.Form>
-            </div>
-          )}
-        </div>
       ) : (
         <div className="session-chat flex min-h-0 flex-1 flex-col">
           <div className="chat-transcript flex min-h-0 flex-1 flex-col items-center justify-center px-3 pb-6 sm:px-4 text-center">
@@ -577,31 +567,6 @@ export default function Session() {
               <br />
               Ready when you are.
             </p>
-            {running && (
-              <div className="mt-6 max-w-sm space-y-3 rounded-2xl border p-4 text-sm">
-                <p>A session is already open in this project.</p>
-                <Button asChild variant="secondary">
-                  <Link to={`/sessions/${data.session!.id}`}>
-                    Return to conversation
-                  </Link>
-                </Button>
-                <control.Form method="post">
-                  <input
-                    type="hidden"
-                    name="sessionId"
-                    value={data.session?.id ?? ''}
-                  />
-                  <Button
-                    variant="ghost"
-                    name="intent"
-                    value="stop"
-                    disabled={control.state !== 'idle'}
-                  >
-                    End current session
-                  </Button>
-                </control.Form>
-              </div>
-            )}
           </div>
           <div className="mx-auto w-full max-w-3xl shrink-0 space-y-3 px-3 sm:px-4">
             <div className="grid gap-2">
@@ -646,16 +611,18 @@ export default function Session() {
               )}
           </div>
           <ChatComposer
-            key="new-session"
+            key={`new-session:${draftId ?? 'default'}`}
+            draftId={draftId}
             workingDirectory={directory}
             projectId={data.project?.id ?? null}
             intent="new-message"
             provider={data.provider}
-            onProviderChange={(provider) =>
-              void navigate(
-                `/sessions/new?provider=${provider}&workingDirectory=${encodeURIComponent(directory)}${data.project ? `&projectId=${data.project.id}` : ''}`,
-              )
-            }
+            onProviderChange={(provider) => {
+              const query = new URLSearchParams(search);
+              query.set('provider', provider);
+              query.set('workingDirectory', directory);
+              void navigate(`/sessions/new?${query}`);
+            }}
             models={
               catalog.data?.workingDirectory === directory &&
               catalog.data.provider === data.provider

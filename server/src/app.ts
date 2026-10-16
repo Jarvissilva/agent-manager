@@ -65,6 +65,17 @@ app.use(
       response.status(400).json({ error: 'Invalid JSON request.' });
       return;
     }
+    if (
+      error &&
+      typeof error === 'object' &&
+      'status' in error &&
+      error.status === 413
+    ) {
+      response.status(413).json({
+        error: 'The request is too large. Upload files up to 20 MB each.',
+      });
+      return;
+    }
 
     console.error(error);
     response

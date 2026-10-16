@@ -1,5 +1,16 @@
+import {
+  beginUsage,
+  usageSummary,
+  type TokenCounters,
+} from '../repositories/usage.js';
+import { recordAntigravityUsage } from '../lib/providers/antigravity/usage.js';
 import { mentionedSkills } from './skills.js';
 import { antigravitySkillPrompt } from '../lib/providers/antigravity/skills.js';
+import {
+  attachmentPrompt,
+  validateAttachments,
+  type FileAttachment,
+} from './files.js';
 import { randomUUID } from 'node:crypto';
 import { EventEmitter, once } from 'node:events';
 import type { ChildProcess } from 'node:child_process';
@@ -64,6 +75,7 @@ export class AntigravityChatSession {
       requests: [],
       state: this.state,
       error: this.error,
+      usage: usageSummary(this.info.id),
       settings: this.info.chatSettings ?? defaultChatSettings,
     };
   }
@@ -73,6 +85,7 @@ export class AntigravityChatSession {
       state: this.state,
       error: this.error,
       requests: [],
+      usage: usageSummary(this.info.id),
       settings: this.info.chatSettings ?? defaultChatSettings,
     });
   }
@@ -98,12 +111,21 @@ export class AntigravityChatSession {
     this.changed();
     this.onClose(code);
   }
-  async send(prompt: string, settings?: ChatSettings) {
+  async send(
+    prompt: string,
+    settings?: ChatSettings,
+    attachments: FileAttachment[] = [],
+  ) {
     await this.ready;
+    const files = await validateAttachments(attachments);
+    const skillReferences = mentionedSkills(prompt);
     if (this.state !== 'idle' || this.process)
       throw new RequestError(409, 'Wait for the current response to finish.');
     const selected = settings ?? this.info.chatSettings ?? defaultChatSettings;
+    prompt = attachmentPrompt(prompt, files);
     const turnId = randomUUID();
+    const usageSteps = new Map<string, TokenCounters>();
+    beginUsage(this.info, turnId, selected.model);
     let resultSeen = false;
     let succeeded = false;
     let diagnostics = '';
@@ -136,7 +158,7 @@ export class AntigravityChatSession {
       child = executeAntigravity(
         {
           cwd: this.cwd,
-          prompt: antigravitySkillPrompt(prompt, mentionedSkills(prompt)),
+          prompt: antigravitySkillPrompt(prompt, skillReferences),
           instructions: this.info.agentInstructions,
           conversationId: this.info.providerConversationId,
           settings: selected,
@@ -149,6 +171,15 @@ export class AntigravityChatSession {
             this.info.providerConversationId = conversationId;
             saveSession(this.info);
           }
+          recordAntigravityUsage(
+            this.info,
+            turnId,
+            usageSteps,
+            String(event.event),
+            payload,
+            selected.model,
+          );
+          if (payload.usage) this.changed();
           if (event.event === 'step_update') {
             if (payload.step_type === 'agent_response') {
               assistant.text += text(payload.text_delta);

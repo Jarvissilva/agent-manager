@@ -11,7 +11,7 @@ Local agent manager. Requires Node.js 24+ and pnpm 10.22.0.
   `repositories/` contains database queries for agents, skills, schedules, and sessions.
   `services/sessions.ts` handles live processes and session lifecycle;
   `repositories/sessions.ts` handles saved session history. `lib/` contains database setup, security checks,
-  terminal WebSockets, and provider integrations under `lib/providers/`.
+  chat streaming, and provider integrations under `lib/providers/`.
 
 Sessions is the default landing page, showing all conversations by recent activity with search,
 project/folder/status filters, and optional grouping by project or folder. Scheduled provides the same global access to scheduled work.
@@ -19,10 +19,12 @@ Desktop navigation uses a narrow sidebar with Home, Sessions, Scheduled, Project
 Projects are optional collections: start directly at `/sessions/new` and choose a folder,
 provider, and optional agent/project. Conversations use `/sessions/:sessionId`.
 The composer contains model, reasoning, provider, and file access settings.
-Codex and Antigravity also offer a Plan toggle in the composer. Off uses normal
+Codex, Antigravity, and OpenCode also offer a Plan toggle in the composer. Off uses normal
 execution; on uses the provider’s native planning behavior. Turn Plan off before
 asking for implementation. Mode changes apply to the next message and are saved with
-the chat settings for resume. OpenCode does not expose this control yet.
+the chat settings for resume. OpenCode switches between its native Plan and Build
+agents, preserving its restrictions on editing project files in Plan mode.
+Shift+Tab toggles Plan while the composer is focused when shortcuts are enabled.
 Projects (`/projects`) provides a searchable list with inline name editing and deletion. Deleting a project with sessions requires choosing to keep them under No project or delete their saved records and messages. End running sessions before deleting their records; keeping sessions preserves running processes. Schedules are kept under No project. Projects have no individual overview pages; sessions and schedules live in their global lists. Home (`/`) starts a chat directly with an optional project, provider, and working folder, and lists running/stopping sessions with live refresh.
 Sessions can be deleted from their list or options menu after confirmation.
 Deletion removes Agent Manager history and messages, including legacy resume
@@ -38,9 +40,6 @@ Older project chat and schedule URLs redirect to the canonical global routes.
 pnpm install
 pnpm dev
 ```
-
-`node-pty` builds a native module during installation. On Linux this requires
-Python 3, make, and a C++ compiler.
 
 Vite serves the client at `http://localhost:5173` by default and proxies `/api`
 requests to Express at `http://127.0.0.1:3001`.
@@ -237,10 +236,12 @@ Shift + Enter inserts a new line. The stop button interrupts the response withou
 ending the conversation. **End session** in the session menu terminates the
 provider and its children, escalating to a force stop after two seconds if needed.
 
-**View terminal output** in the session menu shows read-only command output from
-the same conversation. The composer remains available below it. There are no
-session tabs or nested project panels. Older live terminal sessions retain their
-interactive terminal; **Resume in chat** converts a saved terminal conversation.
+All sessions use chat. The embedded terminal, terminal switching, and terminal
+WebSocket endpoint have been removed. Existing conversations keep their cached
+messages and native provider IDs and resume in chat, including records created
+by older terminal versions. Agent tool commands and output remain visible as
+expandable activity inside the conversation.
+
 For a saved chat, sending a message resumes it automatically while preserving
 its ID and history. Another live session or queued session in the project blocks a
 new launch until it ends.
@@ -252,11 +253,12 @@ On-request approvals are routed to the user and never automatically accepted.
 Structured command/file approvals and text questions are supported; other server
 requests are rejected explicitly. No additional API key is needed. Scheduled sessions use the same chat integration.
 
-Each project can have one live session. Navigating away or closing the browser
+Each project can have multiple live sessions, including sessions using the same
+folder or overlapping parent/child folders. Projects organize work without
+locking it. Navigating away or closing the browser
 leaves it running. Reopening reconnects to the live state without duplicating
 messages. Session metadata and chat items persist in SQLite. Restarting the
 server marks unfinished sessions interrupted, retaining their transcripts.
-Terminal output from older PTY sessions remains in memory, bounded to 1 MiB.
 
 Open a finished or interrupted conversation from **Session history** and send
 a message to reopen it. Resume updates the existing session, keeping its ID, original
@@ -264,22 +266,24 @@ start time, saved agent/skill snapshot, and latest resume time. Chat
 obtains its conversation UUID directly from the provider and hydrates saved
 provider history when resuming, including conversations created in the terminal.
 Codex must still have that conversation locally; empty or deleted provider
-conversations can be unavailable. Legacy terminal launches capture their UUID
-from a dedicated per-launch Codex log. Starting or resuming is blocked while the
-project has a live session or queued sessions.
+conversations can be unavailable. Startup recovers native IDs from any logs left
+by older terminal versions. Other live or queued sessions do not block
+starting or resuming; only reopening the same conversation is rejected.
 
 - `POST /api/sessions`: create with `workingDirectory`, optional `projectId` (or null), `provider`, `agentId`, `settings`, and `transport`.
 - `GET /api/sessions/:sessionId`: saved metadata, including optional project and fixed working directory.
 - `POST /api/sessions/:sessionId/resume`: resume the same conversation with `transport` and optional `settings`.
 - `PATCH /api/sessions/:sessionId`: assign an ended session with `{ "projectId": 1 }`, or remove its assignment with `{ "projectId": null }`. Active/queued sessions return 409.
-- `GET /api/projects/:projectId/session`: current session, saved sessions, and
-  `queuedSessionCount`. Metadata includes `transport` (`chat` or `terminal`),
+- `GET /api/projects/:projectId/session`: legacy latest session, saved sessions, and
+  `queuedSessionCount`. Metadata includes `transport` (new sessions use `chat`),
   `source`, schedule information, saved configuration, and execution outcome.
 - `POST /api/projects/:projectId/session`: start with `{ "transport": "chat", "workingDirectory": "/absolute/folder" }`,
   optionally adding `agentId` and `settings`. Resume with `resumeSessionId` and `transport`.
-  Omitted transport keeps the legacy terminal API behavior. Duplicate launches
+  Omitted transport uses chat. Explicit terminal requests return 400. Duplicate launches
   return 409; resumed sessions reject replacement agent or directory configuration.
-- `DELETE /api/projects/:projectId/session`: stop the current session.
+- `DELETE /api/projects/:projectId/session`: legacy stop for a project with at most
+  one open session; returns 409 when multiple sessions are open. Use
+  `POST /api/sessions/:sessionId/cancel` to stop a specific session.
 - `GET /api/sessions/:sessionId/chat`: SSE snapshot followed by item/state updates.
   Saved transcripts remain readable after the session ends.
 - `GET /api/providers/codex/models`: visible provider models, display names, defaults,
@@ -292,11 +296,10 @@ project has a live session or queued sessions.
 - `POST /api/sessions/:sessionId/requests/:requestId`: respond with
   `{ "decision": "accept" }` or `{ "decision": "decline" }`, or with
   `{ "answers": { "question-id": "answer" } }` for a text question.
-- `WS /api/sessions/:sessionId/terminal`: legacy terminal output, input, and resize.
 
-Express binds to loopback. Browser API requests and terminal WebSockets use the
-trusted-origin checks described under private remote access below. Both Vite
-development and preview proxy API traffic and WebSockets.
+Express binds to loopback. Browser API requests use the trusted-origin checks
+described under private remote access below. Vite development and preview proxy
+API traffic, including chat streaming.
 
 ## Sessions and schedules
 
@@ -320,8 +323,9 @@ by the immediately preceding session’s final response, excluding tool logs. Em
 successful responses do not block execution. Failure, cancellation, timeout, or
 interruption skips remaining steps with an explanation. There are no automatic retries.
 Timeouts begin when each session starts, excluding queue time.
-Sessions queue in order within each project; different projects work independently.
-Within a project, new live chats wait for queued sessions to finish or be cancelled. Standalone sessions and separate standalone schedule occurrences can run independently; steps within an occurrence remain ordered.
+Independent scheduled occurrences can run concurrently, even in the same project
+or working folder, and do not block manual sessions. Steps within each occurrence
+remain ordered and retain their handoff and failure handling.
 
 Scheduled work uses the normal provider chat integration. Replies, tools,
 approvals, and questions appear in the full session page. Approvals are never
@@ -370,7 +374,7 @@ execution is unfinished. Trusted-origin checks also apply.
 
 ## Production with PM2 and private Tailscale access
 
-The production server serves `client/dist`, the API, and chat/terminal WebSockets
+The production server serves `client/dist`, the API, and chat streaming
 from one loopback port, `127.0.0.1:6001`. React routes also work when opened
 directly or refreshed. Development still uses Vite and server port `3001`.
 The server accepts a `PORT` environment variable; the root PM2 ecosystem file
@@ -386,8 +390,7 @@ The server's dev/start scripts and PM2 configuration load this optional file;
 existing process environment variables take precedence. An empty value preserves
 localhost-only browser origins. Restart the server after changing it.
 Only the configured HTTPS origin and matching localhost origins are accepted;
-unrelated origins and mismatched hosts are rejected for API requests and
-WebSockets. Local browser access is available at `http://localhost:6001`;
+unrelated origins and mismatched hosts are rejected for API requests. Local browser access is available at `http://localhost:6001`;
 use the Tailscale HTTPS address for remote access.
 
 PM2 must be installed on the host. From the repository root:
@@ -478,6 +481,29 @@ resource inspection, requested changes, and verification. It uses existing CLI
 authentication; analytics ADC credentials remain separate. No wrapper scripts,
 extra dependencies, or infrastructure permissions are installed by this skill.
 
+## Pinterest skill
+
+`skills/pinterest` provides named-account and named-app Pinterest API commands for Pins, boards,
+analytics, video uploads, and Trends, plus flexible documented API requests.
+Import its folder through the existing Skills flow; no server restart is needed.
+Run `node skills/pinterest/scripts/pinterest.mjs --help` for available commands.
+
+Keep each account’s app credentials and issued OAuth tokens in
+`~/.config/agent-manager/pinterest/accounts.json` (directory mode 700, file mode
+600), outside Git. Its shape is shown in
+`skills/pinterest/references/accounts.example.json`; empty token fields must be
+filled locally before authenticated calls work. Add `expiresAt` as an ISO date/time
+when known; refresh tokens rotate automatically when needed. Select each account
+and its app explicitly with `--account NAME --app NAME`. Each account contains
+a named `apps` object; credentials and token metadata live inside the selected
+app entry. Trial/sandbox creation does not establish public
+visibility; public publishing requires the appropriate app access tier.
+
+Writes and media uploads are not retried automatically after uncertain failures.
+Reports and publishing receipts can be saved to new files in the session working
+folder with `--output`. Test the helpers with
+`pnpm --filter @agent-manager/skill-pinterest test`.
+
 ## Traffic Analyst agent
 
 `agents/traffic-analyst.md` is the maintained instruction source for the Traffic
@@ -518,8 +544,8 @@ tool rules, not an OS or network sandbox. With project writes and Never ask,
 gated tools are denied; full access with Never ask allows all tools. Antigravity
 exposes on-request or never-ask approvals using its native permission bypass flag;
 separate file and network sandbox controls are not available in this integration.
-Unsupported combinations are rejected by the server. These options apply to chat
-sessions; terminal sessions continue to use their provider's native settings.
+Unsupported combinations are rejected by the server. All sessions use the chat
+controls and retain their saved settings on resume.
 
 ## Session activity
 
@@ -532,7 +558,139 @@ Detailed scheduled outcomes remain in the session details.
 
 Session API responses include a derived `activity` field; the stored `status`
 continues to track provider lifecycle for resume, scheduling, and deletion
-protection. An interactive terminal has no reliable turn activity signal, so its
-activity is null, it displays Terminal, and it is excluded from chat activity
-filters and Home's running count. Activity uses existing chat events and list
-refreshes; no database migration is needed.
+protection. Older terminal records now appear as chat conversations using their
+saved outcome until resumed. Activity uses existing chat events and list refreshes.
+
+## Settings and usage reporting
+
+**Settings** (`/settings`) saves model and reasoning defaults for Codex,
+Antigravity, and OpenCode in SQLite, shared across devices. These defaults apply
+only to new interactive chats. Explicit composer choices take precedence;
+resuming conversations and running automations retain their saved configuration.
+OpenCode catalogs are loaded for the chosen working folder. An unavailable saved
+default produces a notice and uses provider defaults without replacing the saved
+preference. Permission defaults are unchanged.
+
+Settings also controls the reporting timezone (initially `Asia/Kolkata`) and
+optional shortcuts: Shift+Tab toggles Plan while the composer is focused on Codex
+or Antigravity, Alt+N opens a new chat, and Alt+/ focuses the composer. Enter sends
+and Shift+Enter inserts a newline regardless of the shortcut preference. Shift+Tab
+retains normal focus navigation outside supported composers. Shortcuts ignore IME
+composition and unrelated inputs or dialogs.
+
+**Usage** (`/usage`) shows daily token totals and an agent/provider/model breakdown
+with Today, 7-day, 30-day, and custom ranges (up to one year). Each session has a
+usage summary and each agent links to its report. Usage is collected for chat
+sessions, including automations, from provider events and durable message
+projections. No transcript-based estimates or historical backfill are attempted;
+older terminal sessions and missing provider data show unavailable. Partial coverage is
+labelled, and reported zero remains distinct from missing usage.
+
+Codex cumulative totals use persisted checkpoints; OpenCode messages use native
+message IDs; Antigravity result totals replace provisional step sums. Cache and
+reasoning details are included according to each provider's accounting and are
+not added to totals twice. Cross-provider totals are analytical usage records,
+not billing estimates. A resumed pre-tracking Codex conversation without a
+baseline is labelled partial. UTC timestamps are grouped by the saved timezone;
+changing it regroups reports without changing stored consumption.
+
+Deleting sessions or agents preserves reporting counts, timestamps, IDs, and
+labels, without retaining prompts, replies, or agent instructions in usage records.
+Provider counter payloads are retained for accounting diagnostics. The feature
+adds tables without changing existing session, agent, or automation records.
+
+- `GET /api/settings`: shared provider defaults, timezone, and shortcut preference.
+- `PATCH /api/settings`: update those fields; provider model/reasoning choices use
+  existing catalog validation. An optional `workingDirectory` selects the catalog.
+- `GET /api/usage`: accepts `from`/`to` (`YYYY-MM-DD` in the saved timezone),
+  `agentId` (or `none`), `provider`, `model`, and `sessionId`; returns totals,
+  coverage information, daily values, breakdowns, and filter choices.
+
+The interface calls scheduled work **Automations**. Existing `/schedules` URLs,
+API endpoints, database names, and execution behavior remain compatible.
+
+## Session tabs and prompt queues
+
+Opening a session adds it to the top tab bar. **+** opens an independent new-chat
+draft without starting a conversation. Switching tabs preserves unsent text,
+working folders, and unsent composer settings. Tabs and drafts live in browser
+session storage: they survive refresh in that browser tab and are not shared
+across devices. Closing a saved session tab leaves its process running; closing
+a new-chat draft discards that draft. Starting a draft replaces its tab with the
+saved conversation. Deleted sessions disappear from the tab bar.
+
+While a response is running, Enter or the send button queues a follow-up prompt.
+The Stop button remains available while composing. Queue entries run in FIFO
+order after successful replies, using the model, reasoning, plan, and permission
+settings captured when submitted. Approvals and questions keep the current turn
+active, so queued prompts wait for its completion. The queue panel supports edit,
+remove, pause, requeue after delivery failures, and explicit resume. Each session
+can hold up to 50 pending prompts. Existing API clients retain immediate-send
+behavior unless they opt into queuing.
+
+Pending queues are stored in SQLite and keep running when the browser disconnects
+or switches tabs. Errors, stopped responses, and ended sessions pause the queue.
+After a server restart, all pending queues require review and explicit resume;
+possibly interrupted delivery is marked for review and is never retried
+automatically. Resume an ended conversation before resuming its queue. Deleting
+session history also deletes its pending prompts and queue state. Automations
+continue to use their existing execution workflow.
+
+- `POST /api/sessions/:sessionId/messages`: optional `delivery: "queue"` queues
+  behind the active response or existing pending prompts. Otherwise an idle
+  session accepts the message immediately.
+- `PATCH /api/sessions/:sessionId/queue`: use `action` (`pause`, `resume`, `edit`,
+  `retry`, or `remove`), an entry `id` when applicable, and `prompt` for edits.
+  Sending entries cannot be edited or removed. Retrying clears the delivery
+  failure; resuming the queue is a separate explicit action.
+- Session details and chat SSE snapshots include `queue`; `queue` SSE events
+  update the pending list and pause state.
+
+For validation without updating the live frontend, run typecheck and lint, build
+server code, and build Vite with `--outDir /tmp/agent-manager-client-check`.
+Deploy frontend and backend together with `pnpm prod:start` on the host; this
+restarts Agent Manager and ends active sessions. A frontend build alone does not
+reload routes in an already running production server.
+
+OpenCode chat and Settings use a provider picker followed by that provider's
+models. The catalog includes connected providers and enabled local/free
+providers that require no credentials; disabled providers and models are hidden.
+Choose OpenCode default to let OpenCode select the model. Switching to a specific
+provider selects its default model (or its first enabled model) and resets the
+reasoning variant. Unavailable saved selections remain labeled until replaced.
+Connections are managed in OpenCode; refresh after changing them (catalogs are
+cached for 15 seconds). Connection availability does not verify quota or access
+to every model.
+
+## Chat file attachments
+
+Use **Attach → Browse laptop files** to select files on the machine running
+Agent Manager, including from a mobile browser. Start in the chat's working
+folder, navigate folders, show hidden files, or enter an absolute/`~/` path.
+**Upload from this device** copies files selected on your phone or computer to
+the server. Attached filenames appear above the composer and can be removed
+before sending. You can send files with or without accompanying text.
+
+Messages accept up to eight files, 20 MB per file and 40 MB total. Referencing a
+laptop file does not copy it. Uploads are stored beside the SQLite database in
+`uploads/<unique ID>/<filename>` with private filesystem permissions. Uploads
+persist across server restarts; removing an attachment or deleting a chat does
+not delete its uploaded file. Draft attachments survive browser refresh alongside
+the draft; queued attachments are stored in SQLite and validated again when sent.
+A moved or deleted file causes delivery to fail and pauses subsequent queued work.
+
+All providers receive file paths in the prompt. Codex also receives native image
+inputs and file mentions; OpenCode receives native image/PDF attachments. Other
+formats are available through the provider's file tools, subject to the session's
+permissions. File references remain visible in stored chat messages.
+
+- `POST /api/files/browse`: JSON `{ path, hidden?, offset? }`, returns folders and
+  files in pages of 200 entries with `nextOffset`.
+- `POST /api/files/reference`: JSON `{ path }`, returns validated file metadata.
+- `POST /api/files/uploads`: raw `application/octet-stream` file bytes with a
+  URI-encoded `X-File-Name` header, returns uploaded file metadata.
+- `POST /api/sessions/:sessionId/messages`: optional `attachments` array of file
+  metadata or paths. Metadata is re-read from disk instead of trusting the client.
+
+File endpoints require a trusted dashboard Origin header. Uploaded files are not
+served as public assets.

@@ -95,6 +95,8 @@ test(
         )
       ).json();
       assert.equal(models[0].model, 'test/fixture');
+      assert.equal(models[0].providerId, 'test');
+      assert.equal(models[0].providerName, 'Test Provider');
       assert.equal(
         models[0].supportedReasoningEfforts[0].reasoningEffort,
         'high',
@@ -114,8 +116,12 @@ test(
         ),
       );
       assert.equal(
-        (await request('POST', '/projects/1/session', { provider: 'opencode' }))
-          .status,
+        (
+          await request('POST', '/projects/1/session', {
+            provider: 'opencode',
+            transport: 'terminal',
+          })
+        ).status,
         400,
       );
       assert.equal(
@@ -133,7 +139,7 @@ test(
           await request('POST', '/projects/1/session', {
             provider: 'opencode',
             transport: 'chat',
-            settings: { ...settings, mode: 'plan' },
+            settings: { ...settings, mode: 'invalid' },
           })
         ).status,
         400,
@@ -155,15 +161,29 @@ test(
       const started = await request('POST', '/projects/1/session', {
         agentId: agent.id,
         transport: 'chat',
-        settings,
+        settings: { ...settings, mode: 'plan' },
       });
       assert.equal(started.status, 201, await started.clone().text());
       const { session } = await started.json();
+      assert.equal(session.chatSettings.mode, 'plan');
       const chat = () => getSession(1).chat;
       const send = (prompt) =>
         request('POST', `/sessions/${session.id}/messages`, { prompt });
       assert.match(getSession(1).info.providerConversationId, /^ses_/);
       assert.equal(getSession(1).info.codexConversationId, null);
+      assert.ok(
+        (await logs()).some(
+          (entry) =>
+            entry.path === '/api/session' && entry.body.agent === 'plan',
+        ),
+      );
+      const planPatch = (await logs())
+        .filter((entry) => entry.method === 'PATCH')
+        .at(-1);
+      assert.deepEqual(planPatch.body.permissions.slice(-2), [
+        { action: 'edit', resource: '*', effect: 'deny' },
+        { action: 'edit', resource: '/native/plan/*', effect: 'allow' },
+      ]);
       assert.ok(
         (await logs()).some(
           (x) =>
@@ -262,6 +282,25 @@ test(
           ),
         );
       }
+      assert.equal(
+        (await logs())
+          .filter(
+            (entry) => entry.path.endsWith('/agent') && entry.method === 'POST',
+          )
+          .at(-1).body.agent,
+        'build',
+      );
+      assert.equal(
+        (
+          await request('POST', `/sessions/${session.id}/messages`, {
+            prompt: 'Plan this change',
+            settings: { ...settings, mode: 'plan' },
+          })
+        ).status,
+        202,
+      );
+      await waitFor(() => chat().state === 'idle');
+      assert.equal(chat().snapshot().settings.mode, 'plan');
       const count = chat().items.size;
       await request('DELETE', '/projects/1/session');
       await waitFor(() => getSession(1).info.status === 'exited');
@@ -272,6 +311,15 @@ test(
       assert.equal(resumed.status, 201, await resumed.clone().text());
       assert.equal((await resumed.json()).session.id, session.id);
       assert.equal(getSession(1).info.providerConversationId, native);
+      assert.equal(chat().snapshot().settings.mode, 'plan');
+      assert.equal(
+        (await logs())
+          .filter(
+            (entry) => entry.path.endsWith('/agent') && entry.method === 'POST',
+          )
+          .at(-1).body.agent,
+        'plan',
+      );
       assert.equal(chat().items.size, count);
       assert.equal(
         database.prepare('SELECT count(*) AS n FROM sessions').get().n,
@@ -306,6 +354,69 @@ test(
           .body.permissions.some(
             (x) => x.action === 'shell' && x.effect === 'allow',
           ),
+      );
+      const missingPlan = join(directory, 'no-plan');
+      await writeFile(missingPlan, '');
+      const beforePrompts = (await logs()).filter((entry) =>
+        entry.path.endsWith('/prompt'),
+      ).length;
+      const unavailable = await request(
+        'POST',
+        `/sessions/${session.id}/messages`,
+        {
+          prompt: 'Do not execute this',
+          settings: { ...settings, mode: 'plan' },
+        },
+      );
+      assert.equal(unavailable.status, 503);
+      assert.match(
+        (await unavailable.json()).error,
+        /Plan agent is unavailable/,
+      );
+      assert.equal(
+        (await logs()).filter((entry) => entry.path.endsWith('/prompt')).length,
+        beforePrompts,
+      );
+      await rm(missingPlan);
+      assert.equal(
+        (
+          await request('POST', `/sessions/${session.id}/messages`, {
+            prompt: 'Plan read only',
+            settings: { ...settings, mode: 'plan', permissions: 'read-only' },
+          })
+        ).status,
+        202,
+      );
+      await waitFor(() => chat().state === 'idle');
+      const readonlyPlan = (await logs())
+        .filter((entry) => entry.method === 'PATCH')
+        .at(-1);
+      assert.equal(readonlyPlan.body.permissions[0].effect, 'deny');
+      assert.ok(
+        !readonlyPlan.body.permissions.some(
+          (rule) => rule.action === 'edit' && rule.effect === 'allow',
+        ),
+      );
+      const attachment = join(directory, 'reference.pdf');
+      await writeFile(attachment, 'PDF fixture bytes');
+      assert.equal(
+        (
+          await request('POST', `/sessions/${session.id}/messages`, {
+            prompt: 'Read the reference',
+            attachments: [{ path: attachment }],
+          })
+        ).status,
+        202,
+      );
+      await waitFor(() => chat().state === 'idle');
+      const attachmentRequest = (await logs())
+        .filter((entry) => entry.path.endsWith('/prompt'))
+        .at(-1);
+      assert.ok(attachmentRequest.body.text.includes(attachment));
+      assert.equal(attachmentRequest.body.files[0].mime, 'application/pdf');
+      assert.equal(
+        attachmentRequest.body.files[0].data,
+        Buffer.from('PDF fixture bytes').toString('base64'),
       );
       await request('DELETE', '/projects/1/session');
       await waitFor(() => getSession(1).info.status === 'exited');

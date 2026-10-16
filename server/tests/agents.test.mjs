@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -23,15 +23,7 @@ test(
     await mkdir(join(directory, 'bin'));
     await writeFile(
       join(directory, 'bin', 'codex'),
-      `#!${process.execPath}
-const fs=require('node:fs');
-const args=process.argv.slice(2);
-const logDir=JSON.parse(args.find(arg=>arg.startsWith('log_dir=')).slice(8));
-fs.writeFileSync(logDir+'/codex-tui.log','INFO session_loop{thread_id=12345678-1234-5678-9012-123456789012}: codex_core::session: new\\n');
-console.log('ARGS:'+JSON.stringify(args));
-console.log('READY');
-process.stdin.resume();
-`,
+      `#!${process.execPath}\n${(await readFile(new URL('./fixtures/codex.cjs', import.meta.url), 'utf8')).replace(/^#!.*\n/, '')}`,
       { mode: 0o755 },
     );
     const { database } = await import('../src/lib/database.ts');
@@ -72,8 +64,17 @@ process.stdin.resume();
       }
     };
     const launchArgs = async () => {
-      await waitFor(() => getSession(1).output.includes('READY'));
-      return JSON.parse(/ARGS:([^\r\n]+)\r?\n/.exec(getSession(1).output)[1]);
+      const calls = (
+        await readFile(join(directory, 'codex-requests.jsonl'), 'utf8')
+      )
+        .trim()
+        .split('\n')
+        .map(JSON.parse);
+      const call = calls.findLast(
+        (call) =>
+          call.method === 'thread/start' || call.method === 'thread/resume',
+      );
+      return { ...call.params, method: call.method };
     };
     try {
       assert.deepEqual(await (await request('GET', '/api/agents')).json(), []);
@@ -161,14 +162,7 @@ process.stdin.resume();
         201,
       );
       const args = await launchArgs();
-      assert.equal(
-        JSON.parse(
-          args
-            .find((arg) => arg.startsWith('developer_instructions='))
-            .slice('developer_instructions='.length),
-        ),
-        input.instructions,
-      );
+      assert.equal(args.developerInstructions, input.instructions);
       await waitFor(() => getSession(1).info.codexConversationId);
       const sessionId = getSession(1).info.id;
       const saved = listSessions(1)[0];
@@ -204,15 +198,8 @@ process.stdin.resume();
         201,
       );
       const resumeArgs = await launchArgs();
-      assert.equal(resumeArgs[0], 'resume');
-      assert.equal(
-        JSON.parse(
-          resumeArgs
-            .find((arg) => arg.startsWith('developer_instructions='))
-            .slice('developer_instructions='.length),
-        ),
-        input.instructions,
-      );
+      assert.equal(resumeArgs.method, 'thread/resume');
+      assert.equal(resumeArgs.developerInstructions, input.instructions);
       assert.equal(getSession(1).info.id, sessionId);
       assert.equal(listSessions(1).length, 1);
       assert.equal(
@@ -245,14 +232,7 @@ process.stdin.resume();
         201,
       );
       const deletedResumeArgs = await launchArgs();
-      assert.equal(
-        JSON.parse(
-          deletedResumeArgs
-            .find((arg) => arg.startsWith('developer_instructions='))
-            .slice('developer_instructions='.length),
-        ),
-        input.instructions,
-      );
+      assert.equal(deletedResumeArgs.developerInstructions, input.instructions);
       await shutdownSessions();
       assert.equal(
         (
@@ -270,9 +250,7 @@ process.stdin.resume();
         201,
       );
       const defaultArgs = await launchArgs();
-      assert.ok(
-        !defaultArgs.some((arg) => arg.startsWith('developer_instructions=')),
-      );
+      assert.equal(defaultArgs.developerInstructions, null);
       assert.equal(listSessions(1)[0].agentId, null);
       assert.equal(listSessions(1)[0].agentInstructions, null);
       await shutdownSessions();

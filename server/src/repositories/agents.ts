@@ -55,7 +55,9 @@ export function createAgent(input: AgentInput) {
     const now = new Date().toISOString();
     const result = database
       .prepare(
-        'INSERT INTO agents (name,provider,instructions,createdAt,updatedAt) VALUES (?,?,?,?,?) ON CONFLICT(name) DO NOTHING',
+        `INSERT INTO agents (id,name,provider,instructions,createdAt,updatedAt)
+         VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM (SELECT id FROM agents UNION ALL SELECT agentId AS id FROM usage_turns WHERE agentId IS NOT NULL)),?,?,?,?,?)
+         ON CONFLICT(name) DO NOTHING`,
       )
       .run(input.name, input.provider, input.instructions, now, now);
     const id = Number(result.lastInsertRowid);

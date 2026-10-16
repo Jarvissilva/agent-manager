@@ -7,19 +7,51 @@ export async function readOpenCodeModels(
   server: OpenCodeServer,
   cwd: string,
 ): Promise<ProviderModel[]> {
-  const [catalog, defaults] = await Promise.all([
-    server.request('/api/model' + locationQuery(cwd)),
+  // OpenCode populates its provider registry while loading the model catalog.
+  // Querying providers concurrently on a fresh server can return an empty list.
+  const catalog = await server.request('/api/model' + locationQuery(cwd));
+  const [defaults, providers, integrations] = await Promise.all([
     server.request('/api/model/default' + locationQuery(cwd)),
+    server.request('/api/provider' + locationQuery(cwd)),
+    server.request('/api/integration' + locationQuery(cwd)),
   ]);
+  const connections = new Map(
+    array(integrations.data)
+      .map(record)
+      .map((integration) => [text(integration.id), integration]),
+  );
+  const available = new Map(
+    array(providers.data)
+      .map(record)
+      .filter((provider) => {
+        if (provider.activation === 'disabled') return false;
+        if (provider.activation === 'enabled') return true;
+        const integration = connections.get(
+          text(provider.integrationID) || text(provider.id),
+        );
+        return integration
+          ? array(integration.connections).length > 0
+          : !text(provider.integrationID);
+      })
+      .map((provider) => [
+        text(provider.id),
+        text(provider.name) || text(provider.id),
+      ]),
+  );
   const defaultModel = record(defaults.data);
   return array(catalog.data)
     .map(record)
-    .filter((model) => model.enabled !== false)
+    .filter(
+      (model) =>
+        model.enabled !== false && available.has(text(model.providerID)),
+    )
     .map((model) => ({
       id: `${text(model.providerID)}/${text(model.id)}`,
       model: `${text(model.providerID)}/${text(model.id)}`,
       displayName: text(model.name) || text(model.id),
       description: text(model.providerID),
+      providerId: text(model.providerID),
+      providerName: available.get(text(model.providerID)),
       isDefault:
         defaultModel.id === model.id &&
         defaultModel.providerID === model.providerID,

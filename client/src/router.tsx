@@ -1,3 +1,5 @@
+import Settings, { settingsLoader, settingsAction } from './pages/Settings';
+import Usage, { usageLoader } from './pages/Usage';
 import { Skeleton } from '@/components/ui/skeleton';
 import { createBrowserRouter, redirect } from 'react-router';
 import Home, { homeLoader } from './pages/Home';
@@ -104,8 +106,14 @@ const router = createBrowserRouter([
         loader: legacyProjectWorkLoader,
       },
       { path: 'providers', loader: () => redirect('/') },
-      { path: 'settings', loader: () => redirect('/') },
-      { path: 'settings/providers', loader: () => redirect('/') },
+      {
+        path: 'settings',
+        Component: Settings,
+        loader: settingsLoader,
+        action: settingsAction,
+      },
+      { path: 'usage', Component: Usage, loader: usageLoader },
+      { path: 'settings/providers', loader: () => redirect('/settings') },
       { path: 'agents', Component: Agents, loader: agentsLoader },
       {
         path: 'agents/new',

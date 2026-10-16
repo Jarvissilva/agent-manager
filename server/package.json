@@ -13,14 +13,11 @@
   "dependencies": {
     "cron-parser": "^5.10.2",
     "express": "^5.2.1",
-    "node-pty": "^1.1.0",
-    "ws": "^8.22.0",
     "yaml": "^2.9.1"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
     "@types/node": "^24.12.3",
-    "@types/ws": "^8.18.2",
     "tsx": "^4.20.6"
   }
 }

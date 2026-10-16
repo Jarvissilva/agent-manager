@@ -13,6 +13,7 @@ const event = (type, data) => {
     client.write('data: ' + JSON.stringify({ type, data }) + '\n\n');
 };
 const finish = (session, outcome = 'succeeded') => {
+  pending = undefined;
   const assistant = session.messages.findLast((x) => x.type === 'assistant');
   if (assistant) {
     assistant.time.completed = Date.now();
@@ -26,7 +27,10 @@ const finish = (session, outcome = 'succeeded') => {
     time: { created: Date.now() },
   });
   save();
-  event('session.status', { sessionID: session.id, status: { type: 'idle' } });
+  event('session.status', {
+    sessionID: session.id,
+    status: { type: 'idle' },
+  });
 };
 const server = http.createServer(async (req, res) => {
   if (
@@ -37,6 +41,8 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   const url = new URL(req.url, 'http://localhost');
+  if (!pending && fs.existsSync(store))
+    native = JSON.parse(fs.readFileSync(store, 'utf8'));
   let raw = '';
   for await (const chunk of req) raw += chunk;
   const body = raw ? JSON.parse(raw) : {};
@@ -84,6 +90,30 @@ const server = http.createServer(async (req, res) => {
     req.on('close', () => clients.delete(res));
     return;
   }
+  if (url.pathname === '/api/provider') {
+    json({
+      data: [
+        {
+          id: 'test',
+          name: 'Test Provider',
+          activation: 'auto',
+          integrationID: 'test-login',
+        },
+      ],
+    });
+    return;
+  }
+  if (url.pathname === '/api/integration') {
+    json({
+      data: [
+        {
+          id: 'test-login',
+          connections: [{ type: 'env', name: 'TEST_API_KEY' }],
+        },
+      ],
+    });
+    return;
+  }
   if (url.pathname === '/api/model') {
     json({
       data: fs.existsSync('no-models')
@@ -108,6 +138,29 @@ const server = http.createServer(async (req, res) => {
     });
     return;
   }
+  if (url.pathname === '/api/agent') {
+    json({
+      data: [
+        { id: 'build', permissions: [] },
+        ...(fs.existsSync('no-plan')
+          ? []
+          : [
+              {
+                id: 'plan',
+                permissions: [
+                  { action: 'edit', resource: '*', effect: 'deny' },
+                  {
+                    action: 'edit',
+                    resource: '/native/plan/*',
+                    effect: 'allow',
+                  },
+                ],
+              },
+            ]),
+      ],
+    });
+    return;
+  }
   if (url.pathname === '/api/session' && req.method === 'POST') {
     const id = 'ses_fixture_' + Object.keys(native).length;
     const session = {
@@ -115,6 +168,7 @@ const server = http.createServer(async (req, res) => {
       location: body.location,
       permissions: body.permissions,
       model: body.model,
+      agent: body.agent,
       messages: [],
     };
     native[id] = session;
@@ -139,6 +193,12 @@ const server = http.createServer(async (req, res) => {
       save();
       res.writeHead(204).end();
     } else json({ data: session });
+    return;
+  }
+  if (suffix === 'agent') {
+    session.agent = body.agent;
+    save();
+    res.writeHead(204).end();
     return;
   }
   if (suffix === 'model') {
@@ -170,7 +230,7 @@ const server = http.createServer(async (req, res) => {
     clearTimeout(pending);
     permissions = [];
     forms = [];
-    finish(session, 'interrupted');
+    if (pending) finish(session, 'interrupted');
     json({});
     return;
   }
