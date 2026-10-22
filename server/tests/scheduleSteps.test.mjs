@@ -138,7 +138,6 @@ test(
       assert.equal((await json('GET', '/schedules')).length, 0);
       const agent = await json('POST', '/agents', {
         name: 'Reviewer',
-        provider: 'codex',
         instructions: 'Frozen role',
       });
       const s = await workflow([
@@ -151,7 +150,7 @@ test(
             permissions: 'read-only',
           },
         },
-        step('Review', 'review', 'opencode'),
+        { ...step('Review', 'review', 'opencode'), agentId: agent.id },
         step('Summarize', 'summarize'),
       ]);
       assert.deepEqual(
@@ -178,6 +177,9 @@ test(
       assert.equal(updated.steps.length, 1);
       assert.equal(rows(first)[0].agentInstructions, 'Frozen role');
       assert.equal(rows(first)[1].snapshot.prompt, 'review');
+      assert.equal(rows(first)[1].snapshot.instructions, 'Frozen role');
+      assert.equal(rows(first)[1].provider, 'opencode');
+      assert.equal(rows(first)[0].provider, 'codex');
       assert.equal(rows(first)[0].chatSettings.effort, 'high');
       assert.equal((await req('DELETE', `/agents/${agent.id}`)).status, 204);
       await dispatchScheduledSessions();

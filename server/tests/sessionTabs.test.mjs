@@ -83,7 +83,7 @@ test('composer draft parsing preserves text and rejects malformed or cross-provi
     undefined,
   );
   assert.equal(parseComposerDraft(saved, 'opencode').settings, undefined);
-  assert.equal(parseComposerDraft(saved, 'opencode').agentId, '');
+  assert.equal(parseComposerDraft(saved, 'opencode').agentId, '4');
   assert.equal(parseComposerDraft(saved, 'opencode').prompt, 'Unsent prompt');
   assert.equal(
     parseComposerDraft(

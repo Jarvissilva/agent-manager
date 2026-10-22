@@ -25,7 +25,6 @@ export default async function agentAction({
           intent === 'save'
             ? JSON.stringify({
                 name: form.get('name'),
-                provider: form.get('provider'),
                 instructions: form.get('instructions'),
                 skillIds: form.getAll('skillIds').map(Number),
               })

@@ -19,7 +19,7 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
-import type { ChatSettings, ProviderModel } from '../types/chat';
+import type { AgentProvider, ChatSettings, ProviderModel } from '../types/chat';
 import type { Skill } from '../types/skill';
 import type { Agent } from '../types/agent';
 
@@ -46,8 +46,8 @@ export default function ChatComposer({
   draftId?: string;
   workingDirectory?: string;
   projectId?: number | null;
-  provider?: Agent['provider'];
-  onProviderChange?: (provider: Agent['provider']) => void;
+  provider?: AgentProvider;
+  onProviderChange?: (provider: AgentProvider) => void;
   intent?: 'message' | 'new-message' | 'continue';
   initialSettings?: ChatSettings;
   models: ProviderModel[];
@@ -182,7 +182,6 @@ export default function ChatComposer({
     setSettingsProvider(provider);
     setSettings(defaults.settings);
     setCustomized(false);
-    setAgentId('');
   }
   if (
     fetcher.state === 'idle' &&
@@ -403,7 +402,7 @@ export default function ChatComposer({
                   <DropdownMenuRadioGroup
                     value={provider}
                     onValueChange={(value) =>
-                      onProviderChange(value as Agent['provider'])
+                      onProviderChange(value as AgentProvider)
                     }
                   >
                     {[
@@ -717,16 +716,14 @@ export default function ChatComposer({
                       <DropdownMenuRadioItem value="default">
                         Default {providerName}
                       </DropdownMenuRadioItem>
-                      {agents
-                        .filter((agent) => agent.provider === provider)
-                        .map((agent) => (
-                          <DropdownMenuRadioItem
-                            key={agent.id}
-                            value={String(agent.id)}
-                          >
-                            {agent.name}
-                          </DropdownMenuRadioItem>
-                        ))}
+                      {agents.map((agent) => (
+                        <DropdownMenuRadioItem
+                          key={agent.id}
+                          value={String(agent.id)}
+                        >
+                          {agent.name}
+                        </DropdownMenuRadioItem>
+                      ))}
                     </DropdownMenuRadioGroup>
                   </>
                 )}

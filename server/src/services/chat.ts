@@ -1,5 +1,10 @@
 import { readCodexHistory } from '../lib/providers/codex/history.js';
 import {
+  mcpElicitation,
+  mcpElicitationResponse,
+  automaticMcpConfirmation,
+} from '../lib/providers/codex/elicitation.js';
+import {
   attachmentPrompt,
   validateAttachments,
   type FileAttachment,
@@ -40,7 +45,12 @@ const limit = (value: string) =>
 
 export type ChatRequest = {
   id: string | number;
-  kind: 'approval' | 'question';
+  kind: 'approval' | 'question' | 'mcp';
+  elicitation?: {
+    mode: 'form' | 'url' | 'unsupported';
+    schema?: Record<string, unknown>;
+    url?: string;
+  };
   title: string;
   detail: string;
   questions: {
@@ -49,7 +59,7 @@ export type ChatRequest = {
     secret: boolean;
     inputType?: string;
     required?: boolean;
-    options: { label: string; description: string }[];
+    options: { label: string; description: string; value?: string }[];
   }[];
 };
 
@@ -218,7 +228,7 @@ export class ChatSession {
     await this.rpc.request('initialize', {
       clientInfo: {
         name: 'agent_manager',
-        title: 'Agent Manager',
+        title: 'Agent OS',
         version: '0.0.0',
       },
       capabilities: { experimentalApi: true },
@@ -271,6 +281,17 @@ export class ChatSession {
     )
       return;
     if (message.id !== undefined) {
+      if (method === 'mcpServer/elicitation/request') {
+        const request = mcpElicitation(message.id, params);
+        const automatic = automaticMcpConfirmation(request);
+        if (automatic) {
+          this.rpc.respond(request.id, automatic);
+          return;
+        }
+        this.requests.set(String(request.id), request);
+        this.changed();
+        return;
+      }
       const question = method === 'item/tool/requestUserInput';
       if (
         question ||
@@ -499,13 +520,18 @@ export class ChatSession {
     }
   }
   respond(id: string, body: Record<string, unknown>) {
-    if (this.state !== 'working')
+    if (
+      this.state !== 'working' &&
+      !(this.state === 'idle' && this.requests.get(id)?.kind === 'mcp')
+    )
       throw new RequestError(409, 'This turn is no longer waiting for input.');
     const request = this.requests.get(id);
     if (!request)
       throw new RequestError(409, 'This request has already been resolved.');
     let result: object;
-    if (request.kind === 'approval') {
+    if (request.kind === 'mcp') {
+      result = mcpElicitationResponse(request, body);
+    } else if (request.kind === 'approval') {
       if (body.decision !== 'accept' && body.decision !== 'decline')
         throw new RequestError(400, 'Choose approve or decline.');
       result = { decision: body.decision };

@@ -197,7 +197,7 @@ export class OpenCodeChatSession {
         (
           await this.server.request('/api/session', 'POST', {
             location: { directory: this.cwd },
-            title: this.info.agentName ?? 'Agent Manager',
+            title: this.info.agentName ?? 'Agent OS',
             agent: settings.mode === 'plan' ? 'plan' : 'build',
             model: modelRef(model.model, settings.effort),
             permissions: permissions(settings, this.cwd),

@@ -39,7 +39,7 @@ export function enqueueSchedule(schedule: Schedule) {
           path,
         })) ?? [];
       const snapshot: SessionSnapshot = {
-        provider: agent?.provider ?? step.provider,
+        provider: step.provider,
         projectName: project?.name ?? null,
         workingDirectory: step.workingDirectory,
         agentId: agent?.id ?? null,

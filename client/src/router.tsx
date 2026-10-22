@@ -1,4 +1,5 @@
 import Settings, { settingsLoader, settingsAction } from './pages/Settings';
+import Mcps, { mcpsLoader, mcpsAction } from './pages/Mcps';
 import Usage, { usageLoader } from './pages/Usage';
 import { Skeleton } from '@/components/ui/skeleton';
 import { createBrowserRouter, redirect } from 'react-router';
@@ -113,6 +114,7 @@ const router = createBrowserRouter([
         action: settingsAction,
       },
       { path: 'usage', Component: Usage, loader: usageLoader },
+      { path: 'mcps', Component: Mcps, loader: mcpsLoader, action: mcpsAction },
       { path: 'settings/providers', loader: () => redirect('/settings') },
       { path: 'agents', Component: Agents, loader: agentsLoader },
       {

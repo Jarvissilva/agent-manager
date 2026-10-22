@@ -1,10 +1,8 @@
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import { NativeSelect } from '@/components/ui/native-select';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
-import { useState } from 'react';
 import { Form, Link } from 'react-router';
 import type { Agent } from '../types/agent';
 import type { Skill } from '../types/skill';
@@ -19,7 +17,6 @@ export default function AgentForm({
   error?: string;
   skills: Skill[];
 }) {
-  const [provider, setProvider] = useState(agent?.provider ?? 'codex');
   return (
     <Form method="post" className="grid gap-3 [&>label:not(:first-child)]:mt-3">
       <Label htmlFor="agent-name" className="grid gap-2 text-sm font-medium">
@@ -35,29 +32,6 @@ export default function AgentForm({
         disabled={busy}
         className="h-10"
       />
-      <Label
-        htmlFor="agent-provider"
-        className="grid gap-2 text-sm font-medium"
-      >
-        Provider
-      </Label>
-      <NativeSelect
-        id="agent-provider"
-        name="provider"
-        value={provider}
-        onChange={(event) =>
-          setProvider(event.target.value as Agent['provider'])
-        }
-        disabled={busy}
-        className="w-full [&>select]:h-10"
-      >
-        <option value="codex">Codex</option>
-        <option value="antigravity">Antigravity (agy)</option>
-        <option value="opencode">OpenCode</option>
-      </NativeSelect>
-      <p className="text-xs leading-5 text-muted-foreground">
-        Choose which local CLI runs this agent.
-      </p>
       <Label
         htmlFor="agent-instructions"
         className="grid gap-2 text-sm font-medium"
@@ -80,8 +54,8 @@ export default function AgentForm({
         id="agent-instructions-help"
         className="text-xs leading-5 text-muted-foreground"
       >
-        Describe the agent’s role and how it should work. Changes apply to new
-        sessions.
+        Describe the agent’s role and how it should work. Use it with any
+        provider. Changes apply to new sessions.
       </p>
       {error && (
         <p

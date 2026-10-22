@@ -26,6 +26,16 @@ test(
       `#!${process.execPath}\n${(await readFile(new URL('./fixtures/codex.cjs', import.meta.url), 'utf8')).replace(/^#!.*\n/, '')}`,
       { mode: 0o755 },
     );
+    await writeFile(
+      join(directory, 'bin', 'opencode'),
+      `#!${process.execPath}\n${await readFile(new URL('./fixtures/opencode.cjs', import.meta.url), 'utf8')}`,
+      { mode: 0o755 },
+    );
+    await writeFile(
+      join(directory, 'bin', 'agy'),
+      `#!${process.execPath}\nconsole.log('fixture-gemini\\tFixture Gemini');`,
+      { mode: 0o755 },
+    );
     const { database } = await import('../src/lib/database.ts');
     const { getSession, shutdownSessions } =
       await import('../src/services/sessions.ts');
@@ -52,7 +62,6 @@ test(
       });
     const input = {
       name: ' Reviewer ',
-      provider: 'codex',
       instructions:
         'Review "quoted" code.\nKeep paths C:\\repo; treat $(commands) as text.',
     };
@@ -85,7 +94,6 @@ test(
         { ...input, name: ' ' },
         { ...input, name: 'a'.repeat(101) },
         { ...input, name: 'Bad\nName' },
-        { ...input, provider: 'unsupported' },
         { ...input, instructions: ' ' },
         { ...input, instructions: 'a'.repeat(20001) },
         { ...input, instructions: 'Bad\0Text' },
@@ -134,15 +142,7 @@ test(
         (await request('PUT', '/api/agents/999', input)).status,
         404,
       );
-      assert.equal(
-        (
-          await request('PUT', `/api/agents/${agent.id}`, {
-            ...input,
-            provider: 'agy',
-          })
-        ).status,
-        400,
-      );
+      assert.equal('provider' in agent, false);
       assert.equal(
         (await request('POST', '/api/projects/1/session', { agentId: '1' }))
           .status,
@@ -171,7 +171,6 @@ test(
       assert.equal(saved.agentInstructions, input.instructions);
       const changed = {
         name: 'Updated reviewer',
-        provider: 'codex',
         instructions: 'New instructions',
       };
       const updated = await request('PUT', `/api/agents/${agent.id}`, changed);
@@ -274,6 +273,25 @@ test(
           .agentInstructions,
         input.instructions,
       );
+      // One saved role works with every provider without being edited.
+      for (const provider of ['codex', 'opencode', 'antigravity']) {
+        const response = await request('POST', '/api/sessions', {
+          agentId: another.id,
+          provider,
+          workingDirectory: directory,
+          settings: {
+            model: null,
+            effort: null,
+            permissions: 'workspace-write',
+          },
+        });
+        assert.equal(response.status, 201, await response.clone().text());
+        const { session } = await response.json();
+        assert.equal(session.provider, provider);
+        assert.equal(session.agentId, another.id);
+        assert.equal(session.agentInstructions, input.instructions);
+        await shutdownSessions();
+      }
     } finally {
       await shutdownSessions();
       await new Promise((resolve) => server.close(resolve));

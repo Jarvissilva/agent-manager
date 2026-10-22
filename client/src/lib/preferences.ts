@@ -1,13 +1,12 @@
 import { useRouteLoaderData } from 'react-router';
 import type { projectsLoader } from '../layouts/AppLayout';
 import type { AppSettings } from '../types/settings';
-import type { ChatSettings, ProviderModel } from '../types/chat';
-import type { Agent } from '../types/agent';
+import type { AgentProvider, ChatSettings, ProviderModel } from '../types/chat';
 export function useAppSettings() {
   return useRouteLoaderData<typeof projectsLoader>('app')!.settings;
 }
 export function chatDefaults(
-  provider: Agent['provider'],
+  provider: AgentProvider,
   models: ProviderModel[],
   preferences: AppSettings,
 ) {

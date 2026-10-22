@@ -48,7 +48,7 @@ export default function Usage() {
       <header className="space-y-2">
         <h1 className="text-2xl font-semibold">Usage</h1>
         <p className="text-sm text-muted-foreground">
-          Provider-reported tokens recorded by Agent Manager. Days use{' '}
+          Provider-reported tokens recorded by Agent OS. Days use{' '}
           {report.timezone}.{' '}
           <Link className="underline" to="/settings">
             Change timezone

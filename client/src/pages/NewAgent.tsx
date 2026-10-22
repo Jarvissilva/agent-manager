@@ -19,7 +19,7 @@ export default function NewAgent() {
           New agent
         </h1>
         <p className="text-sm leading-6 text-muted-foreground">
-          Define a reusable role for your agent provider.
+          Define a reusable role to use with any provider.
         </p>
       </header>
       <Card className="mb-6 space-y-5 rounded-2xl border bg-card/40 p-4">

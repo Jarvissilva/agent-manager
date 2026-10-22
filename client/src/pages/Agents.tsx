@@ -24,7 +24,7 @@ export default function Agents() {
           </Link>
         </div>
         <p className="text-sm leading-6 text-muted-foreground">
-          Reusable roles and instructions for your project sessions.
+          Reusable roles and instructions for sessions with any provider.
         </p>
       </header>
       {agents.length ? (
@@ -43,13 +43,6 @@ export default function Agents() {
                     <Link to={`/agents/${agent.id}`}>{agent.name}</Link>
                   </h2>
                 </div>
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
-                  {agent.provider === 'opencode'
-                    ? 'OpenCode'
-                    : agent.provider === 'antigravity'
-                      ? 'Antigravity'
-                      : 'Codex'}
-                </span>
               </div>
               <p className="line-clamp-3 text-sm leading-6 text-muted-foreground whitespace-pre-wrap break-words">
                 {agent.instructions}

@@ -36,6 +36,7 @@ const navigationItems: { to: string; label: string; icon: IconName }[] = [
   { to: '/projects', label: 'Projects', icon: 'folder' },
   { to: '/agents', label: 'Agents', icon: 'agent' },
   { to: '/skills', label: 'Skills', icon: 'skills' },
+  { to: '/mcps', label: 'MCPs', icon: 'mcp' },
   { to: '/usage', label: 'Usage', icon: 'activity' },
   { to: '/settings', label: 'Settings', icon: 'settings' },
 ];

@@ -118,8 +118,7 @@ export default async function createSession(
     }
   }
 
-  const provider =
-    resume?.provider ?? agent?.provider ?? request.body?.provider ?? 'codex';
+  const provider = resume?.provider ?? request.body?.provider ?? 'codex';
   if (
     provider !== 'codex' &&
     provider !== 'antigravity' &&
@@ -132,7 +131,7 @@ export default async function createSession(
   }
   if (request.body?.provider && request.body.provider !== provider) {
     response.status(400).json({
-      error: 'The selected agent or saved session uses a different provider.',
+      error: 'The saved session uses a different provider.',
     });
     return;
   }

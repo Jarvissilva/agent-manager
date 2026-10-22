@@ -1,5 +1,7 @@
 import type { UsageSummary } from './usage';
 import type { FileAttachment } from './files';
+
+export type AgentProvider = 'codex' | 'antigravity' | 'opencode';
 export type ChatItem = {
   id: string;
   turnId: string;
@@ -11,7 +13,12 @@ export type ChatItem = {
 };
 export type ChatRequest = {
   id: string | number;
-  kind: 'approval' | 'question';
+  kind: 'approval' | 'question' | 'mcp';
+  elicitation?: {
+    mode: 'form' | 'url' | 'unsupported';
+    schema?: Record<string, unknown>;
+    url?: string;
+  };
   title: string;
   detail: string;
   questions: {
@@ -20,7 +27,7 @@ export type ChatRequest = {
     secret: boolean;
     inputType?: string;
     required?: boolean;
-    options: { label: string; description: string }[];
+    options: { label: string; description: string; value?: string }[];
   }[];
 };
 export type ChatQueue = {

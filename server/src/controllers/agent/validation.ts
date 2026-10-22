@@ -43,15 +43,6 @@ export function validateAgent(
     };
   }
   if (
-    !('provider' in body) ||
-    (body.provider !== 'codex' &&
-      body.provider !== 'antigravity' &&
-      body.provider !== 'opencode')
-  )
-    return {
-      error: 'Choose Codex, Antigravity or OpenCode.',
-    };
-  if (
     !('instructions' in body) ||
     typeof body.instructions !== 'string' ||
     !body.instructions.trim() ||
@@ -81,7 +72,6 @@ export function validateAgent(
   return {
     value: {
       name: body.name.trim(),
-      provider: body.provider,
       instructions: body.instructions.trim(),
       skillIds,
     },

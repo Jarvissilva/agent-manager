@@ -1,4 +1,5 @@
 import { getUsage } from './controllers/usage.js';
+import * as mcps from './controllers/mcps.js';
 import { getAppSettings, patchAppSettings } from './controllers/settings.js';
 import {
   getDiscoveredSkills,
@@ -69,6 +70,13 @@ function localWrite(request: Request, response: Response, next: NextFunction) {
 }
 
 router.get('/usage', getUsage);
+router.get('/mcps', mcps.list);
+router.post('/mcps/import', localWrite, mcps.importConfig);
+router.post('/mcps', localWrite, mcps.create);
+router.get('/mcps/:mcpId', mcps.get);
+router.put('/mcps/:mcpId', localWrite, mcps.update);
+router.post('/mcps/:mcpId/sync', localWrite, mcps.sync);
+router.delete('/mcps/:mcpId', localWrite, mcps.remove);
 router.use('/files', (request, response, next) => {
   if (!isAllowedOrigin(request)) {
     response.status(403).json({

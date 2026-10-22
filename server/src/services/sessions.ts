@@ -146,7 +146,7 @@ export function startSession(
   agent?: Agent,
   transport: 'chat' = 'chat',
   settings?: ChatSettings,
-  provider: AgentProvider = resume?.provider ?? agent?.provider ?? 'codex',
+  provider: AgentProvider = resume?.provider ?? 'codex',
 ) {
   cwd = resume?.workingDirectory ?? cwd;
   const existing = resume ? getSessionById(resume.id) : undefined;

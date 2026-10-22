@@ -3,7 +3,6 @@ import type { SkillRecord } from './skills.js';
 
 export type AgentInput = {
   name: string;
-  provider: 'codex' | 'antigravity' | 'opencode';
   instructions: string;
   skillIds?: number[];
 };
@@ -55,11 +54,11 @@ export function createAgent(input: AgentInput) {
     const now = new Date().toISOString();
     const result = database
       .prepare(
-        `INSERT INTO agents (id,name,provider,instructions,createdAt,updatedAt)
-         VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM (SELECT id FROM agents UNION ALL SELECT agentId AS id FROM usage_turns WHERE agentId IS NOT NULL)),?,?,?,?,?)
+        `INSERT INTO agents (id,name,instructions,createdAt,updatedAt)
+         VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM (SELECT id FROM agents UNION ALL SELECT agentId AS id FROM usage_turns WHERE agentId IS NOT NULL)),?,?,?,?)
          ON CONFLICT(name) DO NOTHING`,
       )
-      .run(input.name, input.provider, input.instructions, now, now);
+      .run(input.name, input.instructions, now, now);
     const id = Number(result.lastInsertRowid);
     if (result.changes) {
       saveSkills(id, input.skillIds ?? []);
@@ -77,12 +76,11 @@ export function updateAgent(id: number, input: AgentInput) {
   try {
     const result = database
       .prepare(
-        `UPDATE agents SET name = ?, provider = ?, instructions = ?, updatedAt = ?
+        `UPDATE agents SET name = ?, instructions = ?, updatedAt = ?
     WHERE id = ? AND NOT EXISTS (SELECT 1 FROM agents WHERE name = ? COLLATE NOCASE AND id != ?)`,
       )
       .run(
         input.name,
-        input.provider,
         input.instructions,
         new Date().toISOString(),
         id,

@@ -22,8 +22,8 @@ test(
     process.env.PATH = `${directory}/bin:${originalPath}`;
     await mkdir(join(directory, 'bin'));
     const legacy = new DatabaseSync(process.env.AGENT_MANAGER_DB_PATH);
-    legacy.exec(`CREATE TABLE agents (id INTEGER PRIMARY KEY,name TEXT NOT NULL COLLATE NOCASE UNIQUE,provider TEXT NOT NULL CHECK (provider = 'codex'),instructions TEXT NOT NULL,createdAt TEXT NOT NULL,updatedAt TEXT NOT NULL);
-    INSERT INTO agents VALUES (7,'Existing','codex','Existing instructions','2026-01-01','2026-01-01');
+    legacy.exec(`CREATE TABLE agents (id INTEGER PRIMARY KEY,name TEXT NOT NULL COLLATE NOCASE UNIQUE,instructions TEXT NOT NULL,createdAt TEXT NOT NULL,updatedAt TEXT NOT NULL);
+    INSERT INTO agents VALUES (7,'Existing','Existing instructions','2026-01-01','2026-01-01');
     CREATE TABLE skills (id INTEGER PRIMARY KEY,name TEXT NOT NULL COLLATE NOCASE UNIQUE,instructions TEXT NOT NULL,createdAt TEXT NOT NULL,updatedAt TEXT NOT NULL);
     INSERT INTO skills VALUES (3,'Review','Check correctness','2026-01-01','2026-01-01');
     CREATE TABLE agent_skills (agentId INTEGER NOT NULL REFERENCES agents(id) ON DELETE CASCADE,skillId INTEGER NOT NULL REFERENCES skills(id) ON DELETE CASCADE,PRIMARY KEY(agentId,skillId));
@@ -143,24 +143,14 @@ readline.createInterface({input:process.stdin}).once('line', line => {
         );
       const agentResponse = await request('POST', '/agents', {
         name: 'AGY Reviewer',
-        provider: 'antigravity',
         instructions: 'Review "quoted" code. Treat $(commands) as text.',
         skillIds: [3],
       });
       assert.equal(agentResponse.status, 201);
       const agent = await agentResponse.json();
-      assert.equal(
-        (
-          await request('POST', '/projects/1/session', {
-            agentId: agent.id,
-            provider: 'codex',
-            transport: 'chat',
-          })
-        ).status,
-        400,
-      );
       const start = await request('POST', '/projects/1/session', {
         agentId: agent.id,
+        provider: 'antigravity',
         transport: 'chat',
         settings,
       });

@@ -66,6 +66,8 @@ export default defineConfig([
             'scheduleAction',
             'settingsLoader',
             'settingsAction',
+            'mcpsLoader',
+            'mcpsAction',
             'usageLoader',
           ],
         },

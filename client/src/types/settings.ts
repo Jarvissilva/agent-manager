@@ -1,7 +1,7 @@
-import type { Agent } from './agent';
+import type { AgentProvider } from './chat';
 export type AppSettings = {
   providers: Record<
-    Agent['provider'],
+    AgentProvider,
     { model: string | null; effort: string | null }
   >;
   timezone: string;

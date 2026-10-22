@@ -244,19 +244,6 @@ function StepFields({
           onChange({
             ...step,
             agentId: a?.id ?? null,
-            ...(a && a.provider !== provider
-              ? {
-                  provider: a.provider,
-                  settings: {
-                    model: null,
-                    effort: null,
-                    permissions:
-                      a.provider === 'antigravity'
-                        ? 'workspace-write'
-                        : permissions,
-                  },
-                }
-              : {}),
           });
         }}
         disabled={busy}
@@ -275,7 +262,7 @@ function StepFields({
         onChange={(e) =>
           changeProvider(e.target.value as ScheduleStep['provider'])
         }
-        disabled={busy || !!agent}
+        disabled={busy}
       >
         <option value="codex">Codex</option>
         <option value="antigravity">Antigravity</option>

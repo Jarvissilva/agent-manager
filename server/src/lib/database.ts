@@ -18,10 +18,30 @@ export const database = new DatabaseSync(databasePath);
 database.exec('PRAGMA foreign_keys = ON');
 
 database.exec(`
+  CREATE TABLE IF NOT EXISTS mcp_servers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    nativeName TEXT NOT NULL UNIQUE, enabled INTEGER NOT NULL DEFAULT 1,
+    createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL, publications TEXT NOT NULL DEFAULT '[]'
+  );
+  CREATE TABLE IF NOT EXISTS mcp_publications (
+    mcpId INTEGER NOT NULL REFERENCES mcp_servers(id) ON DELETE CASCADE,
+    provider TEXT NOT NULL, path TEXT NOT NULL, signature TEXT NOT NULL,
+    PRIMARY KEY(mcpId,provider)
+  );
+`);
+
+if (
+  !database
+    .prepare('PRAGMA table_info(mcp_servers)')
+    .all()
+    .some((column) => column.name === 'previousNativeName')
+)
+  database.exec('ALTER TABLE mcp_servers ADD COLUMN previousNativeName TEXT');
+
+database.exec(`
   CREATE TABLE IF NOT EXISTS agents (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL COLLATE NOCASE UNIQUE,
-    provider TEXT NOT NULL CHECK (provider IN ('codex', 'antigravity', 'opencode')),
     instructions TEXT NOT NULL,
     createdAt TEXT NOT NULL,
     updatedAt TEXT NOT NULL
@@ -85,32 +105,6 @@ database.exec(`
   );
   CREATE INDEX IF NOT EXISTS sessions_project_started ON sessions(projectId, startedAt DESC);
 `);
-
-// Rebuild the original single-provider table while preserving its IDs and links.
-const agentSchema = database
-  .prepare("SELECT sql FROM sqlite_master WHERE name = 'agents'")
-  .get();
-if (!String(agentSchema?.sql).includes("'opencode'")) {
-  database.exec('PRAGMA foreign_keys = OFF');
-  try {
-    database.exec(`BEGIN;
-      CREATE TABLE agents_new (
-        id INTEGER PRIMARY KEY,
-        name TEXT NOT NULL COLLATE NOCASE UNIQUE,
-        provider TEXT NOT NULL CHECK (provider IN ('codex', 'antigravity', 'opencode')),
-        instructions TEXT NOT NULL, createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL
-      );
-      INSERT INTO agents_new SELECT * FROM agents;
-      DROP TABLE agents;
-      ALTER TABLE agents_new RENAME TO agents;
-      COMMIT;`);
-  } catch (error) {
-    database.exec('ROLLBACK');
-    throw error;
-  } finally {
-    database.exec('PRAGMA foreign_keys = ON');
-  }
-}
 
 const sessionColumns = database.prepare('PRAGMA table_info(sessions)').all();
 if (

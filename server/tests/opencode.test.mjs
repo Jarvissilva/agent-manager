@@ -40,8 +40,8 @@ test(
     );
     await chmod(join(directory, 'bin', 'opencode'), 0o755);
     const legacy = new DatabaseSync(process.env.AGENT_MANAGER_DB_PATH);
-    legacy.exec(`CREATE TABLE agents(id INTEGER PRIMARY KEY,name TEXT NOT NULL COLLATE NOCASE UNIQUE,provider TEXT NOT NULL CHECK(provider IN ('codex','antigravity')),instructions TEXT NOT NULL,createdAt TEXT NOT NULL,updatedAt TEXT NOT NULL);
- INSERT INTO agents VALUES(7,'Existing','antigravity','Keep me','2026-01-01','2026-01-01');`);
+    legacy.exec(`CREATE TABLE agents(id INTEGER PRIMARY KEY,name TEXT NOT NULL COLLATE NOCASE UNIQUE,instructions TEXT NOT NULL,createdAt TEXT NOT NULL,updatedAt TEXT NOT NULL);
+ INSERT INTO agents VALUES(7,'Existing','Keep me','2026-01-01','2026-01-01');`);
     legacy.close();
     const { database } = await import('../src/lib/database.ts');
     const { findSessionById } = await import('../src/repositories/sessions.ts');
@@ -84,9 +84,15 @@ test(
     };
     try {
       assert.equal(
-        database.prepare('SELECT provider FROM agents WHERE id=7').get()
-          .provider,
-        'antigravity',
+        database.prepare('SELECT * FROM agents WHERE id=7').get().instructions,
+        'Keep me',
+      );
+      assert.equal(
+        database
+          .prepare('PRAGMA table_info(agents)')
+          .all()
+          .some((column) => column.name === 'provider'),
+        false,
       );
       const models = await (
         await request(
@@ -152,7 +158,6 @@ test(
       ).json();
       const agentResponse = await request('POST', '/agents', {
         name: 'OpenCode agent',
-        provider: 'opencode',
         instructions: 'Review code',
         skillIds: [skill.id],
       });
@@ -160,6 +165,7 @@ test(
       const agent = await agentResponse.json();
       const started = await request('POST', '/projects/1/session', {
         agentId: agent.id,
+        provider: 'opencode',
         transport: 'chat',
         settings: { ...settings, mode: 'plan' },
       });

@@ -44,15 +44,13 @@ export async function validateSchedule(
     const agent = agentId === null ? undefined : findAgent(agentId);
     if (agentId !== null && !agent)
       throw new RequestError(404, 'Agent not found.');
-    const provider = agent?.provider ?? value.provider ?? 'codex';
+    const provider = value.provider ?? 'codex';
     if (
       provider !== 'codex' &&
       provider !== 'antigravity' &&
       provider !== 'opencode'
     )
       throw new RequestError(400, 'Choose a valid provider.');
-    if (agent && value.provider && provider !== value.provider)
-      throw new RequestError(400, 'The agent uses a different provider.');
     const directory = await workingDirectory(value.workingDirectory);
     const prompt = textField(value.prompt, 'a prompt', 20000);
     const settings = await validateChatSettings(

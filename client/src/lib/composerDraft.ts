@@ -64,10 +64,7 @@ export function parseComposerDraft(
         draft.provider === provider && draft.settingsDirty !== false
           ? validSettings
           : undefined,
-      agentId:
-        draft.provider === provider && typeof draft.agentId === 'string'
-          ? draft.agentId
-          : '',
+      agentId: typeof draft.agentId === 'string' ? draft.agentId : '',
     };
   } catch {
     return null;

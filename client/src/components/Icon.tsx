@@ -18,6 +18,7 @@ import {
   History,
   Ellipsis,
   House,
+  Plug,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 const icons = {
@@ -40,6 +41,7 @@ const icons = {
   history: History,
   more: Ellipsis,
   home: House,
+  mcp: Plug,
 };
 export type IconName = keyof typeof icons;
 export default function Icon({

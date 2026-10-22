@@ -49,6 +49,16 @@ function RequestCard({
           {request.detail}
         </pre>
       )}
+      {request.elicitation?.url && (
+        <a
+          href={request.elicitation.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-sm underline"
+        >
+          Open MCP consent page
+        </a>
+      )}
       {request.questions.map((question) => (
         <label key={question.id} className="block space-y-2 text-sm">
           {question.question}
@@ -84,12 +94,31 @@ function RequestCard({
                 }
               >
                 {question.options.map((option) => (
-                  <option key={option.label} value={option.label}>
+                  <option
+                    key={option.value ?? option.label}
+                    value={option.value ?? option.label}
+                  >
                     {option.description || option.label}
                   </option>
                 ))}
               </NativeSelect>
             </>
+          ) : request.kind === 'mcp' && question.options.length > 0 ? (
+            <NativeSelect
+              name={`answer:${question.id}`}
+              required={question.required}
+              defaultValue=""
+            >
+              <option value="">Choose an answer</option>
+              {question.options.map((option) => (
+                <option
+                  key={option.value ?? option.label}
+                  value={option.value ?? option.label}
+                >
+                  {option.label}
+                </option>
+              ))}
+            </NativeSelect>
           ) : question.inputType === 'boolean' ? (
             <NativeSelect
               className="w-full"
@@ -127,7 +156,39 @@ function RequestCard({
         </p>
       )}
       <div className="flex flex-wrap items-center gap-2">
-        {request.kind === 'approval' ? (
+        {request.kind === 'mcp' ? (
+          <>
+            {request.elicitation?.mode !== 'unsupported' && (
+              <Button
+                name="decision"
+                value="accept"
+                disabled={fetcher.state !== 'idle'}
+              >
+                {request.elicitation?.mode === 'url'
+                  ? 'I completed the consent step'
+                  : 'Approve once'}
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              name="decision"
+              value="decline"
+              formNoValidate
+              disabled={fetcher.state !== 'idle'}
+            >
+              Decline
+            </Button>
+            <Button
+              variant="ghost"
+              name="decision"
+              value="cancel"
+              formNoValidate
+              disabled={fetcher.state !== 'idle'}
+            >
+              Cancel request
+            </Button>
+          </>
+        ) : request.kind === 'approval' ? (
           <>
             <Button
               name="decision"

@@ -2,6 +2,9 @@
 const fs = require('node:fs');
 const readline = require('node:readline');
 const path = require('node:path');
+// Tests install this executable in <temporary directory>/bin/codex.
+// Model discovery can run from the server directory instead of a test workspace.
+const requestsFile = path.join(__dirname, '..', 'codex-requests.jsonl');
 const file = path.join(process.cwd(), 'history.json');
 let history = fs.existsSync(file)
   ? JSON.parse(fs.readFileSync(file, 'utf8'))
@@ -38,7 +41,7 @@ const finish = (text, status = 'completed') => {
 };
 readline.createInterface({ input: process.stdin }).on('line', (line) => {
   const m = JSON.parse(line);
-  fs.appendFileSync('codex-requests.jsonl', JSON.stringify(m) + '\n');
+  fs.appendFileSync(requestsFile, JSON.stringify(m) + '\n');
   history = fs.existsSync(file)
     ? JSON.parse(fs.readFileSync(file, 'utf8'))
     : history;

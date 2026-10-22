@@ -9,8 +9,7 @@ import {
 import { api } from '../lib/api';
 import { useAppSettings } from '../lib/preferences';
 import type { AppSettings } from '../types/settings';
-import type { Agent } from '../types/agent';
-import type { ProviderModel } from '../types/chat';
+import type { AgentProvider, ProviderModel } from '../types/chat';
 import type { Session } from '../types/session';
 import WorkingDirectoryField from '../components/WorkingDirectoryField';
 import OpenCodeModelPicker from '../components/OpenCodeModelPicker';
@@ -114,7 +113,7 @@ function ProviderDefaults({
   saved,
   directory,
 }: {
-  provider: Agent['provider'];
+  provider: AgentProvider;
   models: ProviderModel[];
   error: string | null;
   saved: AppSettings['providers']['codex'];

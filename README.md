@@ -1,6 +1,6 @@
-# Agent Manager
+# Agent OS
 
-Local agent manager. Requires Node.js 24+ and pnpm 10.22.0.
+Local workspace for AI agents. Requires Node.js 24+ and pnpm 10.22.0.
 
 ## Structure
 
@@ -27,7 +27,7 @@ agents, preserving its restrictions on editing project files in Plan mode.
 Shift+Tab toggles Plan while the composer is focused when shortcuts are enabled.
 Projects (`/projects`) provides a searchable list with inline name editing and deletion. Deleting a project with sessions requires choosing to keep them under No project or delete their saved records and messages. End running sessions before deleting their records; keeping sessions preserves running processes. Schedules are kept under No project. Projects have no individual overview pages; sessions and schedules live in their global lists. Home (`/`) starts a chat directly with an optional project, provider, and working folder, and lists running/stopping sessions with live refresh.
 Sessions can be deleted from their list or options menu after confirmation.
-Deletion removes Agent Manager history and messages, including legacy resume
+Deletion removes Agent OS history and messages, including legacy resume
 aliases, and leaves project files and native provider conversations intact.
 Running/stopping sessions must end and queued sessions must be cancelled first.
 History for an unfinished multi-session scheduled execution is protected until
@@ -85,9 +85,9 @@ Provider definitions are kept in server code; no provider database table is need
 
 ## Antigravity (agy)
 
-Choose **Antigravity** in a new chat’s composer, or choose it as an agent’s provider.
+Choose **Antigravity** in a new chat’s composer.
 The model menu comes from `agy models`; model and reasoning changes apply on the
-next message. Sign in with `agy` locally first. Agent Manager uses your existing
+next message. Sign in with `agy` locally first. Agent OS uses your existing
 credentials and never edits your global Antigravity settings or project files.
 
 Chat uses the [official CLI streaming protocol](https://www.antigravity.google/docs/cli/headless/).
@@ -130,18 +130,18 @@ subagents. Edit mode allows project file edits and asks before commands, externa
 access and other tools. OpenCode schedules use the same chat protocol and saved instruction snapshots.
 Approvals and questions wait for the user within the schedule timeout; cancellation
 and timeouts stop their server.
-Configure OpenCode MCP tools through OpenCode itself.
+Configure shared MCP tools through Agent OS's **MCPs** section, or through OpenCode itself.
 
 ## Agents
 
 Open **Agents** in the sidebar to create, list, edit, or delete a reusable agent.
-Each agent has a unique name (up to 100 characters, case-insensitive), a provider,
-and instructions (up to 20,000 characters). Codex, Antigravity and OpenCode are supported
-for agents, live sessions, and schedules. OpenCode is listed for installation detection.
+Each agent has a unique name (up to 100 characters, case-insensitive), instructions
+(up to 20,000 characters), and optional skills. Agents work with Codex, Antigravity,
+and OpenCode. Choose the provider separately for each live session or schedule step.
 
-Select an agent when starting a session before starting Codex, or use **Default Codex**
-for a session without an agent. New chats also have a provider selector in the
-composer. Instructions for Codex are supplied using its
+Select an agent and provider when starting a session, or use the provider defaults
+for a session without an agent. Switching providers keeps the selected agent.
+Instructions for Codex are supplied using its
 `developer_instructions` configuration; no project files are created or modified
 to configure the agent. The session saves its agent name and instructions as a
 snapshot. Editing an agent affects new sessions. Resume uses the saved snapshot,
@@ -150,7 +150,7 @@ while keeping conversations and their saved instructions.
 An agent used by a schedule must be reassigned or removed from it before deletion.
 
 - `GET /api/agents`: list saved agents, ordered by name.
-- `POST /api/agents`: create with `{ "name": "Reviewer", "provider": "codex",
+- `POST /api/agents`: create with `{ "name": "Reviewer",
 "instructions": "Review code and report findings." }`; returns 201.
 - `GET /api/agents/:agentId`: load one agent.
 - `PUT /api/agents/:agentId`: update the same fields, with optional `skillIds`.
@@ -158,6 +158,7 @@ An agent used by a schedule must be reassigned or removed from it before deletio
 
 Invalid fields return 400, missing agents 404, and duplicate names 409.
 Agents persist in the same SQLite database as projects and sessions.
+Each session and schedule step stores its own provider.
 
 ## Skills
 
@@ -180,7 +181,7 @@ portable native name. Existing unrelated folders are never overwritten. Provider
 publication errors and missing originals appear on the skill page.
 
 Assign up to 50 skills to an agent to suggest relevant native workflows. Global
-publication makes skills available outside Agent Manager and outside those
+publication makes skills available outside Agent OS and outside those
 assignments; assignments are not an access boundary. Use **Skills** in the chat
 composer to explicitly select one: Codex uses `$name` and a native skill input,
 OpenCode uses `@name`, and Antigravity uses `/name` at the start of the message.
@@ -212,7 +213,95 @@ Legacy API callers may omit native name/description; sensible defaults are gener
 ## Local tools
 
 Use local tools such as `ssh` and `gh` directly, with skills for reusable workflow instructions.
-Configure MCP tools through each provider itself.
+### Shared MCP servers
+
+Open **MCPs** (`/mcps`) to add, edit, enable/disable, synchronize, or delete
+shared MCP servers. Add a local stdio executable with an argument list and
+environment variables, or a remote HTTP URL with authentication headers.
+Adding a definition publishes configuration; it does not run the executable or
+test the connection. New CLI sessions load the published settings. Existing
+sessions may retain their previously loaded tools.
+
+**Import JSON** accepts multiple servers in a standard `mcpServers` object,
+an OpenCode `mcp` object, or one server with `name` and a command or URL:
+
+```json
+{
+  "mcpServers": {
+    "example": {
+      "command": "npx",
+      "args": ["-y", "your-mcp-package"],
+      "env": { "API_KEY": "your-key" }
+    },
+    "remote": {
+      "url": "https://example.com/mcp",
+      "headers": { "Authorization": "Bearer your-token" }
+    }
+  }
+}
+```
+
+Each server uses the exact supplied name in all provider configurations. Names
+must be 1–64 letters, numbers, dots, underscores, or hyphens and start with a
+letter or number. Creation, JSON imports, and renames check the catalog and all
+three provider configurations for conflicts, including disabled entries. A
+conflict is rejected rather than overwriting or adopting another entry.
+Definitions are stored in private mode-600 files under `server/data/mcps/` (beside the
+database if `AGENT_MANAGER_DB_PATH` is set); SQLite stores metadata and
+publication ownership hashes, not credential values. Saved environment values
+and headers are masked in the UI/API. On edit, `null` keeps a saved value, a
+string replaces it, and removing a key deletes it. Do not put credentials in
+command arguments or commit them to Git.
+
+Agent OS publishes native entries to:
+
+- Codex: `$CODEX_HOME/config.toml`, defaulting to `~/.codex/config.toml`.
+- Antigravity CLI: `~/.gemini/config/mcp_config.json`.
+- OpenCode: `$XDG_CONFIG_HOME/opencode/opencode.json`, defaulting to
+  `~/.config/opencode/opencode.json`. An existing `.jsonc` file is used when
+  there is no `.json` file. JSONC comments/trailing commas are accepted; updating
+  it rewrites it as formatted JSON while preserving unrelated settings.
+
+These servers are globally available both inside Agent OS and in normal
+Codex, AGY, and OpenCode sessions. No per-agent/session MCP selection is applied.
+Project/provider policies can still override native global configuration.
+Stdio servers use a shared launcher reading the private definition, so their
+secrets are not duplicated into provider configs or command arguments. Remote
+headers are synchronized into the providers' native private configuration
+files. OAuth authentication remains provider-managed; sign in separately using
+the displayed native server name when required.
+
+Unrelated MCP entries and settings are preserved. Existing provider files get a
+private `.before-agent-manager` backup before the first change. Externally
+modified managed entries are left untouched and shown as publication errors;
+resolve the conflict and click **Sync**. Deletion is blocked if an owned entry
+cannot be removed safely. The catalog is synchronized again on server startup.
+Publication status confirms configuration writes, not a live MCP connection.
+
+Existing generated MCP names migrate to their current display names on startup
+or Sync. Editing the name also renames the provider entries. IDs, secrets, and
+enabled states are preserved. Conflicts, unsupported Codex TOML layouts, and
+external changes leave the old name in place and appear as publication errors.
+Codex checks named tables, quoted/dotted keys, and inline entries inside
+`[mcp_servers]`; inline root MCP tables are rejected conservatively.
+Renames use private backups and a recovery journal in `server/data/mcps/renames/`
+(beside the configured database). Interrupted renames are recovered before
+synchronization; externally changed files are never overwritten during recovery.
+After a successful rename, start new sessions and log in again for OAuth
+connections associated with the old name. Provider credential stores are not
+rewritten.
+
+Codex automatically approves ordinary MCP confirmations (form requests with no
+fields) for all MCP servers. Forms needing answers appear in chat with
+**Approve once**, **Decline**, and **Cancel request** controls. Supported forms collect typed answers; URL
+requests offer a link and require explicit confirmation after the external step.
+Declining or cancelling does not require completing form fields. Device-proof
+verification and unsupported schemas are shown explicitly and cannot be approved
+as ordinary consent. MCP approval does not change global tool permissions.
+
+`AGENT_MANAGER_MCP_HOME` redirects all three provider destinations beneath an
+isolated home directory for testing. It does not change the normal providers'
+home directories.
 
 Existing connector configuration is removed on startup after a one-time database backup
 (`<database-path>.before-remove-connectors.sqlite`). Sessions, transcripts, agents, skills,
@@ -401,10 +490,37 @@ pnpm prod:status
 pnpm prod:logs
 ```
 
-`prod:start` builds both workspaces and starts or restarts only `agent-manager`.
+`prod:start` builds both workspaces and starts or restarts only `agentos`.
 Use `pnpm prod:restart` after environment changes, `pnpm prod:stop` to stop it,
 and `pnpm prod:start` to deploy code changes. Restarting ends live agent sessions.
 PM2 automatically restarts a crashed server; file watching is disabled.
+
+### Moving from `agent-manager` to `agentos`
+
+The saved PM2 entry retains absolute paths after a folder move. Run this once
+on the host from the new repository root, with Node 24 or later:
+
+```sh
+pnpm build
+pm2 stop agent-manager
+pnpm prod:migrate-paths /home/user/projects/internal/agent-manager
+pm2 delete agent-manager
+pm2 start ecosystem.config.cjs --only agentos
+pnpm prod:status
+```
+
+The migration backs up the existing SQLite database beside the original with
+mode 600, updates session directories and skill paths under the exact old root,
+and repairs managed skill symlinks that still point there. Keep the app stopped
+while it runs. It refuses to overwrite skill links changed by another tool and
+is safe to rerun. If it fails, resolve the reported problem before starting the
+app. The new root is determined from the migration script's location.
+
+Check `http://localhost:6001`, existing sessions and skills, then run `pm2 save`
+to persist the new process paths for reboot recovery. Other PM2 apps are left
+alone. Keep the existing database filename, `AGENT_MANAGER_*` variables,
+credentials directories, browser storage and Tailscale service/URL; these are
+independent of the repository directory name.
 
 Define a Tailscale Service named `agent-manager` with endpoint `tcp:443` in the
 admin console. The host must have a tag-based identity. Configure its destination:
@@ -442,12 +558,12 @@ pnpm typecheck
 pnpm lint
 pnpm format:check
 pnpm build
-pnpm --filter @agent-manager/server test
+pnpm --filter @agentos/server test
 ```
 
 Use `pnpm format` to format the repository. After building, use
-`pnpm --filter @agent-manager/client preview` to preview the client and
-`pnpm --filter @agent-manager/server start` to run the compiled server.
+`pnpm --filter @agentos/client preview` to preview the client and
+`pnpm --filter @agentos/server start` to run the compiled server.
 
 ## Analytics skills
 
@@ -455,7 +571,7 @@ Reusable read-only skills live in `skills/google-search-console`,
 `skills/google-analytics`, and `skills/bing-webmaster`. Each includes `SKILL.md`,
 Node.js 24 scripts, presets, and helpers for custom API queries. Register their
 absolute folders through the existing Skills import flow. Imported skills are
-edited in the repository; native discovery is handled by Agent Manager.
+edited in the repository; native discovery is handled by Agent OS.
 
 Google scripts use installed `gcloud` with impersonated Application Default
 Credentials and per-service read-only scopes. Bing reads
@@ -470,7 +586,21 @@ privacy/top-row limits, GA4 can apply thresholding or sampling, and Bing dates
 can label aggregate buckets with fixed server-side history.
 
 Validate the retrieval scripts with
-`pnpm --filter '@agent-manager/skill-*' test`.
+`pnpm --filter '@agentos/skill-*' test`.
+
+## Hostinger Affiliate skill
+
+`skills/hostinger-affiliate-access` provides read-only TUNE Affiliate API access
+for offers, offer payouts, account balance, aggregate stats, and conversions.
+Import its folder through Skills. Run `node skills/hostinger-affiliate-access/scripts/report.mjs --help`
+for commands. Reports require explicit dates and expose pagination/coverage warnings.
+
+Set `HOSTINGER_AFFILIATE_NETWORK_ID` and `HOSTINGER_AFFILIATE_API_KEY` in the
+environment or the private `~/.config/agent-manager/credentials.env` file (mode
+600, parent directory 700). These are affiliate credentials, separate from
+Hostinger hosting and Mail MCP tokens. Keys and authenticated request echoes are
+excluded from reports and API errors. Validate with
+`node --test skills/tests/hostinger-affiliate-access.test.mjs`.
 
 ## Google Cloud skill
 
@@ -502,7 +632,7 @@ visibility; public publishing requires the appropriate app access tier.
 Writes and media uploads are not retried automatically after uncertain failures.
 Reports and publishing receipts can be saved to new files in the session working
 folder with `--output`. Test the helpers with
-`pnpm --filter @agent-manager/skill-pinterest test`.
+`pnpm --filter @agentos/skill-pinterest test`.
 
 ## Traffic Analyst agent
 
@@ -647,9 +777,9 @@ continue to use their existing execution workflow.
   update the pending list and pause state.
 
 For validation without updating the live frontend, run typecheck and lint, build
-server code, and build Vite with `--outDir /tmp/agent-manager-client-check`.
+server code, and build Vite with `--outDir /tmp/agentos-client-check`.
 Deploy frontend and backend together with `pnpm prod:start` on the host; this
-restarts Agent Manager and ends active sessions. A frontend build alone does not
+restarts Agent OS and ends active sessions. A frontend build alone does not
 reload routes in an already running production server.
 
 OpenCode chat and Settings use a provider picker followed by that provider's
@@ -665,7 +795,7 @@ to every model.
 ## Chat file attachments
 
 Use **Attach → Browse laptop files** to select files on the machine running
-Agent Manager, including from a mobile browser. Start in the chat's working
+Agent OS, including from a mobile browser. Start in the chat's working
 folder, navigate folders, show hidden files, or enter an absolute/`~/` path.
 **Upload from this device** copies files selected on your phone or computer to
 the server. Attached filenames appear above the composer and can be removed

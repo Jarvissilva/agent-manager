@@ -1,9 +1,11 @@
 import { initializeSkills } from './services/skills.js';
+import { initializeMcps } from './services/mcps.js';
 import app from './app.js';
 import { shutdownSessions } from './services/sessions.js';
 import { startScheduler, stopScheduler } from './services/schedules.js';
 
 initializeSkills();
+initializeMcps();
 
 const port = Number(process.env.PORT ?? 3001);
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
