@@ -9,7 +9,7 @@ import test from 'node:test';
 test('transactional migration preserves sessions, schedules, deleted task history, queued snapshots and legacy links', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'manager-migration-'));
   const path = join(dir, 'test.sqlite');
-  const db = new DatabaseSync(path);
+  let db = new DatabaseSync(path);
   try {
     db.exec(`CREATE TABLE projects(id INTEGER PRIMARY KEY,name TEXT,path TEXT);
  CREATE TABLE agents(id INTEGER PRIMARY KEY,name TEXT NOT NULL COLLATE NOCASE UNIQUE,provider TEXT NOT NULL CHECK(provider IN ('codex','antigravity','opencode')),instructions TEXT,createdAt TEXT,updatedAt TEXT);
@@ -113,6 +113,10 @@ test('transactional migration preserves sessions, schedules, deleted task histor
         },
       );
     migrate();
+    // The migration runs in a separate process and rebuilds the sessions table.
+    // Reopen so this connection does not keep the pre-migration schema.
+    db.close();
+    db = new DatabaseSync(path);
     const first = db.prepare('SELECT * FROM sessions ORDER BY id').all();
     assert.equal(first.length, 3);
     assert.equal(
