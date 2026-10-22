@@ -261,8 +261,8 @@ export default function FileAttachments({
           <AlertDialogHeader>
             <AlertDialogTitle>Browse laptop files</AlertDialogTitle>
             <AlertDialogDescription>
-              Files on the machine running Agent OS. Select up to 8 files, 20 MB
-              each.
+              Files on the machine running Agent Manager. Select up to 8 files,
+              20 MB each.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="flex gap-2">

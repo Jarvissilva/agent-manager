@@ -33,7 +33,7 @@ async function readModels() {
     await rpc.request('initialize', {
       clientInfo: {
         name: 'agent_manager',
-        title: 'Agent OS',
+        title: 'Agent Manager',
         version: '0.0.0',
       },
     });

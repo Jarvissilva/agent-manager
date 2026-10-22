@@ -40,4 +40,4 @@ jobs:
         run: pnpm build
 
       - name: Test
-        run: pnpm --filter @agentos/server test
+        run: pnpm --filter @agent-manager/server test

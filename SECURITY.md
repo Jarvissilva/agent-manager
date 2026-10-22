@@ -2,14 +2,14 @@
 
 ## Scope and threat model
 
-Agent OS is a local development tool. It is **not** designed to be exposed to a
+Agent Manager is a local development tool. It is **not** designed to be exposed to a
 network and ships without authentication.
 
 - The server binds to `127.0.0.1` only (`server/src/index.ts`).
-- Session working folders are chosen by the user and are not sandboxed by Agent OS.
-- Agent providers (Codex, Antigravity, OpenCode) are separate programs. Agent OS
+- Session working folders are chosen by the user and are not sandboxed by Agent Manager.
+- Agent providers (Codex, Antigravity, OpenCode) are separate programs. Agent Manager
   starts them and forwards prompts; whatever permissions those CLIs grant apply.
-- Agent OS can run shell commands, edit files, and read anything your user account
+- Agent Manager can run shell commands, edit files, and read anything your user account
   can read, wherever a session points. Treat it like a terminal, not a web app.
 - `AGENT_MANAGER_PUBLIC_ORIGIN` exists for a private HTTPS reverse proxy such as
   Tailscale Serve. It is an origin allowlist, not an authentication mechanism.

@@ -51,7 +51,7 @@ export default function DeleteProjectButton({ project }: { project: Project }) {
             </AlertDialogTitle>
             <AlertDialogDescription>
               {hasSessions
-                ? `This project has ${project.sessionCount} ${project.sessionCount === 1 ? 'session' : 'sessions'}. Keep them under No project, or permanently delete their records and messages from Agent OS.`
+                ? `This project has ${project.sessionCount} ${project.sessionCount === 1 ? 'session' : 'sessions'}. Keep them under No project, or permanently delete their records and messages from Agent Manager.`
                 : 'This project has no sessions. Only the project will be deleted.'}
               {project.scheduleCount > 0 &&
                 ` Its ${project.scheduleCount} ${project.scheduleCount === 1 ? 'automation will' : 'automations will'} be kept under No project.`}

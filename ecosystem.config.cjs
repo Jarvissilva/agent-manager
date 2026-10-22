@@ -3,7 +3,7 @@ const path = require('node:path');
 module.exports = {
   apps: [
     {
-      name: 'agentos',
+      name: 'agent-manager',
       cwd: path.join(__dirname, 'server'),
       script: 'dist/index.js',
       node_args: '--env-file-if-exists=../.env',

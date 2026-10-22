@@ -1,4 +1,4 @@
-# Agent OS
+# Agent Manager
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -7,7 +7,7 @@ Antigravity, or OpenCode; chat with an agent inside any project folder; keep the
 history, queue follow-up prompts, schedule recurring work, and track token usage.
 Everything runs on your machine — there is no hosted service and no telemetry.
 
-> **Agent OS runs agent CLIs with your user's permissions.** It listens on
+> **Agent Manager runs agent CLIs with your user's permissions.** It listens on
 > `127.0.0.1` only and has no authentication layer. Do not expose it to the
 > internet or bind it to a public interface. See [SECURITY.md](SECURITY.md).
 
@@ -20,8 +20,8 @@ Everything runs on your machine — there is no hosted service and no telemetry.
 ## Quick start
 
 ```sh
-git clone <repository-url> agentos
-cd agentos
+git clone <repository-url> agent-manager
+cd agent-manager
 pnpm install
 pnpm dev
 ```
@@ -56,7 +56,7 @@ agents, preserving its restrictions on editing project files in Plan mode.
 Shift+Tab toggles Plan while the composer is focused when shortcuts are enabled.
 Projects (`/projects`) provides a searchable list with inline name editing and deletion. Deleting a project with sessions requires choosing to keep them under No project or delete their saved records and messages. End running sessions before deleting their records; keeping sessions preserves running processes. Schedules are kept under No project. Projects have no individual overview pages; sessions and schedules live in their global lists. Home (`/`) starts a chat directly with an optional project, provider, and working folder, and lists running/stopping sessions with live refresh.
 Sessions can be deleted from their list or options menu after confirmation.
-Deletion removes Agent OS history and messages, including legacy resume
+Deletion removes Agent Manager history and messages, including legacy resume
 aliases, and leaves project files and native provider conversations intact.
 Running/stopping sessions must end and queued sessions must be cancelled first.
 History for an unfinished multi-session scheduled execution is protected until
@@ -116,7 +116,7 @@ Provider definitions are kept in server code; no provider database table is need
 
 Choose **Antigravity** in a new chat’s composer.
 The model menu comes from `agy models`; model and reasoning changes apply on the
-next message. Sign in with `agy` locally first. Agent OS uses your existing
+next message. Sign in with `agy` locally first. Agent Manager uses your existing
 credentials and never edits your global Antigravity settings or project files.
 
 Chat uses the [official CLI streaming protocol](https://www.antigravity.google/docs/cli/headless/).
@@ -159,7 +159,7 @@ subagents. Edit mode allows project file edits and asks before commands, externa
 access and other tools. OpenCode schedules use the same chat protocol and saved instruction snapshots.
 Approvals and questions wait for the user within the schedule timeout; cancellation
 and timeouts stop their server.
-Configure shared MCP tools through Agent OS's **MCPs** section, or through OpenCode itself.
+Configure shared MCP tools through Agent Manager's **MCPs** section, or through OpenCode itself.
 
 ## Agents
 
@@ -210,7 +210,7 @@ portable native name. Existing unrelated folders are never overwritten. Provider
 publication errors and missing originals appear on the skill page.
 
 Assign up to 50 skills to an agent to suggest relevant native workflows. Global
-publication makes skills available outside Agent OS and outside those
+publication makes skills available outside Agent Manager and outside those
 assignments; assignments are not an access boundary. Use **Skills** in the chat
 composer to explicitly select one: Codex uses `$name` and a native skill input,
 OpenCode uses `@name`, and Antigravity uses `/name` at the start of the message.
@@ -283,7 +283,7 @@ and headers are masked in the UI/API. On edit, `null` keeps a saved value, a
 string replaces it, and removing a key deletes it. Do not put credentials in
 command arguments or commit them to Git.
 
-Agent OS publishes native entries to:
+Agent Manager publishes native entries to:
 
 - Codex: `$CODEX_HOME/config.toml`, defaulting to `~/.codex/config.toml`.
 - Antigravity CLI: `~/.gemini/config/mcp_config.json`.
@@ -292,7 +292,7 @@ Agent OS publishes native entries to:
   there is no `.json` file. JSONC comments/trailing commas are accepted; updating
   it rewrites it as formatted JSON while preserving unrelated settings.
 
-These servers are globally available both inside Agent OS and in normal
+These servers are globally available both inside Agent Manager and in normal
 Codex, AGY, and OpenCode sessions. No per-agent/session MCP selection is applied.
 Project/provider policies can still override native global configuration.
 Stdio servers use a shared launcher reading the private definition, so their
@@ -520,7 +520,7 @@ pnpm prod:status
 pnpm prod:logs
 ```
 
-`prod:start` builds both workspaces and starts or restarts only `agentos`.
+`prod:start` builds both workspaces and starts or restarts only `agent-manager`.
 Use `pnpm prod:restart` after environment changes, `pnpm prod:stop` to stop it,
 and `pnpm prod:start` to deploy code changes. Restarting ends live agent sessions.
 PM2 automatically restarts a crashed server; file watching is disabled.
@@ -532,10 +532,10 @@ on the host from the new repository root, with Node 24 or later:
 
 ```sh
 pnpm build
-pm2 stop agentos
+pm2 stop agent-manager
 pnpm prod:migrate-paths /absolute/path/to/old/repository
-pm2 delete agentos
-pm2 start ecosystem.config.cjs --only agentos
+pm2 delete agent-manager
+pm2 start ecosystem.config.cjs --only agent-manager
 pnpm prod:status
 ```
 
@@ -587,18 +587,18 @@ pnpm typecheck
 pnpm lint
 pnpm format:check
 pnpm build
-pnpm --filter @agentos/server test
+pnpm --filter @agent-manager/server test
 ```
 
 Use `pnpm format` to format the repository. After building, use
-`pnpm --filter @agentos/client preview` to preview the client and
-`pnpm --filter @agentos/server start` to run the compiled server.
+`pnpm --filter @agent-manager/client preview` to preview the client and
+`pnpm --filter @agent-manager/server start` to run the compiled server.
 
 ## Bring your own skills
 
 No skills ship with this repository. A skill is a folder containing `SKILL.md`
 plus any helper scripts; import one from **Skills → Import** or create it in the
-UI. Agent OS keeps a snapshot of the instructions and publishes native skill
+UI. Agent Manager keeps a snapshot of the instructions and publishes native skill
 files to Codex, Antigravity, and OpenCode when a session needs them.
 
 Keep skill folders, and any credentials their scripts read, outside this
@@ -725,9 +725,9 @@ continue to use their existing execution workflow.
   update the pending list and pause state.
 
 For validation without updating the live frontend, run typecheck and lint, build
-server code, and build Vite with `--outDir /tmp/agentos-client-check`.
+server code, and build Vite with `--outDir /tmp/agent-manager-client-check`.
 Deploy frontend and backend together with `pnpm prod:start` on the host; this
-restarts Agent OS and ends active sessions. A frontend build alone does not
+restarts Agent Manager and ends active sessions. A frontend build alone does not
 reload routes in an already running production server.
 
 OpenCode chat and Settings use a provider picker followed by that provider's
@@ -743,7 +743,7 @@ to every model.
 ## Chat file attachments
 
 Use **Attach → Browse laptop files** to select files on the machine running
-Agent OS, including from a mobile browser. Start in the chat's working
+Agent Manager, including from a mobile browser. Start in the chat's working
 folder, navigate folders, show hidden files, or enter an absolute/`~/` path.
 **Upload from this device** copies files selected on your phone or computer to
 the server. Attached filenames appear above the composer and can be removed

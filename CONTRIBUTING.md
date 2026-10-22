@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for taking a look at Agent OS.
+Thanks for taking a look at Agent Manager.
 
 ## Before you start
 
@@ -26,7 +26,7 @@ pnpm format:check
 pnpm lint
 pnpm typecheck
 pnpm build
-pnpm --filter @agentos/server test
+pnpm --filter @agent-manager/server test
 ```
 
 `pnpm format` fixes formatting.
@@ -52,13 +52,6 @@ folders, provider credentials, or personal paths here. `skills/` is ignored by G
   or provider parsing.
 - New UI copy should stay in the existing tone: short, direct, no marketing.
 - Do not reformat unrelated files; Prettier handles the whole repository.
-
-## Known inconsistency
-
-Environment variables still use the `AGENT_MANAGER_*` prefix and the database file
-is still `agent-manager.sqlite`, from before the project was renamed to Agent OS.
-Renaming them would break existing installs, so it needs a deliberate migration
-rather than a drive-by change.
 
 ## License
 

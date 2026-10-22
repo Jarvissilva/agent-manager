@@ -14,9 +14,9 @@ import { tmpdir } from 'node:os';
 import { migrateRepository } from '../../migrate-repository.mjs';
 
 test('repository move preserves data, repairs owned links, and is idempotent', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'agentos-rename-'));
-  const from = join(dir, 'agent-manager');
-  const to = join(dir, 'agentos');
+  const dir = mkdtempSync(join(tmpdir(), 'agent-manager-rename-'));
+  const from = join(dir, 'agent-manager-old');
+  const to = join(dir, 'agent-manager');
   mkdirSync(to);
   const databasePath = join(dir, 'data.sqlite');
   const link = join(dir, 'published-skill');
@@ -99,9 +99,9 @@ test('repository move preserves data, repairs owned links, and is idempotent', a
 });
 
 test('repository move refuses to overwrite an externally changed skill link', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'agentos-rename-conflict-'));
-  const from = join(dir, 'agent-manager');
-  const to = join(dir, 'agentos');
+  const dir = mkdtempSync(join(tmpdir(), 'agent-manager-rename-conflict-'));
+  const from = join(dir, 'agent-manager-old');
+  const to = join(dir, 'agent-manager');
   mkdirSync(to);
   const databasePath = join(dir, 'data.sqlite');
   const link = join(dir, 'published-skill');

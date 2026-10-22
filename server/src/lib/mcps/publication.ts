@@ -275,7 +275,7 @@ function prepareDestination(
     (!ownership || signature(current) !== ownership.signature)
   )
     throw Error(
-      'This MCP entry was changed outside Agent OS; it was left untouched.',
+      'This MCP entry was changed outside Agent Manager; it was left untouched.',
     );
 
   return {

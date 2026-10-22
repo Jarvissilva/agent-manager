@@ -21,7 +21,7 @@ import { findMcp, listMcps, type McpRecord } from '../repositories/mcps.js';
 const root = join(dirname(databasePath), 'mcps');
 const launcher = join(root, 'stdio.cjs');
 const source = (id: number) => join(root, `${id}.json`);
-const launcherContents = `// Agent OS: shared stdio MCP launcher. No secret values appear in argv.
+const launcherContents = `// Agent Manager: shared stdio MCP launcher. No secret values appear in argv.
 const fs = require('node:fs');
 const { spawn } = require('node:child_process');
 const config = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
@@ -128,7 +128,7 @@ function nameAvailable(name: string, id?: number) {
   )
     throw new RequestError(
       409,
-      `MCP name "${name}" already exists in Agent OS.`,
+      `MCP name "${name}" already exists in Agent Manager.`,
     );
   assertMcpNameAvailable(name, id ? findMcp(id) : undefined);
 }

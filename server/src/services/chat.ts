@@ -228,7 +228,7 @@ export class ChatSession {
     await this.rpc.request('initialize', {
       clientInfo: {
         name: 'agent_manager',
-        title: 'Agent OS',
+        title: 'Agent Manager',
         version: '0.0.0',
       },
       capabilities: { experimentalApi: true },

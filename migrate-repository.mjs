@@ -67,7 +67,7 @@ export async function migrateRepository({ databasePath, from, to }) {
       links.push({ path: row.path, original, target });
     }
     if (!updates.length) return { changes: 0, links: 0, backupPath: null };
-    const backupPath = `${databasePath}.before-agentos-${Date.now()}.sqlite`;
+    const backupPath = `${databasePath}.before-agent-manager-${Date.now()}.sqlite`;
     await backup(db, backupPath);
     chmodSync(backupPath, 0o600);
     db.exec('BEGIN IMMEDIATE');
