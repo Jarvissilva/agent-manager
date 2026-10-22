@@ -116,16 +116,6 @@ importers:
         specifier: ^4.20.6
         version: 4.23.15
 
-  skills/bing-webmaster: {}
-
-  skills/google-analytics: {}
-
-  skills/google-search-console: {}
-
-  skills/hostinger-affiliate-access: {}
-
-  skills/pinterest: {}
-
 packages:
 
   '@babel/code-frame@7.29.7':

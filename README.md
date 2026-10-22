@@ -1,6 +1,35 @@
 # Agent OS
 
-Local workspace for AI agents. Requires Node.js 24+ and pnpm 10.22.0.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+A local workspace for running AI coding agents from one dashboard. Connect Codex,
+Antigravity, or OpenCode; chat with an agent inside any project folder; keep the
+history, queue follow-up prompts, schedule recurring work, and track token usage.
+Everything runs on your machine — there is no hosted service and no telemetry.
+
+> **Agent OS runs agent CLIs with your user's permissions.** It listens on
+> `127.0.0.1` only and has no authentication layer. Do not expose it to the
+> internet or bind it to a public interface. See [SECURITY.md](SECURITY.md).
+
+## Requirements
+
+- Node.js 24 or newer
+- pnpm 10.22.0
+- At least one provider CLI installed and authenticated: `codex`, `agy`, or `opencode`
+
+## Quick start
+
+```sh
+git clone <repository-url> agentos
+cd agentos
+pnpm install
+pnpm dev
+```
+
+Open `http://localhost:5173` and start a session with any folder on this machine.
+
+For a compiled build, see
+[Production with PM2 and private Tailscale access](#production-with-pm2-and-private-tailscale-access).
 
 ## Structure
 
@@ -213,6 +242,7 @@ Legacy API callers may omit native name/description; sensible defaults are gener
 ## Local tools
 
 Use local tools such as `ssh` and `gh` directly, with skills for reusable workflow instructions.
+
 ### Shared MCP servers
 
 Open **MCPs** (`/mcps`) to add, edit, enable/disable, synchronize, or delete
@@ -495,16 +525,16 @@ Use `pnpm prod:restart` after environment changes, `pnpm prod:stop` to stop it,
 and `pnpm prod:start` to deploy code changes. Restarting ends live agent sessions.
 PM2 automatically restarts a crashed server; file watching is disabled.
 
-### Moving from `agent-manager` to `agentos`
+### Moving the repository directory
 
 The saved PM2 entry retains absolute paths after a folder move. Run this once
 on the host from the new repository root, with Node 24 or later:
 
 ```sh
 pnpm build
-pm2 stop agent-manager
-pnpm prod:migrate-paths /home/user/projects/internal/agent-manager
-pm2 delete agent-manager
+pm2 stop agentos
+pnpm prod:migrate-paths /absolute/path/to/old/repository
+pm2 delete agentos
 pm2 start ecosystem.config.cjs --only agentos
 pnpm prod:status
 ```
@@ -543,9 +573,8 @@ pm2 save
 systemctl is-enabled pm2-user tailscaled
 ```
 
-On this host both boot services are already enabled. On a new host, run
-`pm2 startup` as the app user and execute its generated systemd installation
-command, then `pm2 save`. Enable Tailscale with
+To enable both at boot, run `pm2 startup` as the app user and execute its
+generated systemd installation command, then `pm2 save`. Enable Tailscale with
 `sudo systemctl enable --now tailscaled`. The saved service mapping persists
 across reboots. The host must remain awake. The native folder picker opens on
 the host's desktop, not on the remote phone; saved folders or manual paths can
@@ -565,96 +594,15 @@ Use `pnpm format` to format the repository. After building, use
 `pnpm --filter @agentos/client preview` to preview the client and
 `pnpm --filter @agentos/server start` to run the compiled server.
 
-## Analytics skills
+## Bring your own skills
 
-Reusable read-only skills live in `skills/google-search-console`,
-`skills/google-analytics`, and `skills/bing-webmaster`. Each includes `SKILL.md`,
-Node.js 24 scripts, presets, and helpers for custom API queries. Register their
-absolute folders through the existing Skills import flow. Imported skills are
-edited in the repository; native discovery is handled by Agent OS.
+No skills ship with this repository. A skill is a folder containing `SKILL.md`
+plus any helper scripts; import one from **Skills → Import** or create it in the
+UI. Agent OS keeps a snapshot of the instructions and publishes native skill
+files to Codex, Antigravity, and OpenCode when a session needs them.
 
-Google scripts use installed `gcloud` with impersonated Application Default
-Credentials and per-service read-only scopes. Bing reads
-`BING_WEBMASTER_API_KEY` from the environment or
-`~/.config/agent-manager/credentials.env`; keep that file outside Git with mode 600. No PM2 environment change is needed for this fallback.
-
-Run `node <skill-folder>/scripts/report.mjs --help` for commands. GA4 can discover accessible properties with `--report properties` and inspect
-website URLs with `--property ID --report streams`; discovery requires the
-Google Analytics Admin API in addition to the Data API. Reports support explicit dates, custom JSON requests, and
-new output files via `--output`. Check returned warnings: Search Console has
-privacy/top-row limits, GA4 can apply thresholding or sampling, and Bing dates
-can label aggregate buckets with fixed server-side history.
-
-Validate the retrieval scripts with
-`pnpm --filter '@agentos/skill-*' test`.
-
-## Hostinger Affiliate skill
-
-`skills/hostinger-affiliate-access` provides read-only TUNE Affiliate API access
-for offers, offer payouts, account balance, aggregate stats, and conversions.
-Import its folder through Skills. Run `node skills/hostinger-affiliate-access/scripts/report.mjs --help`
-for commands. Reports require explicit dates and expose pagination/coverage warnings.
-
-Set `HOSTINGER_AFFILIATE_NETWORK_ID` and `HOSTINGER_AFFILIATE_API_KEY` in the
-environment or the private `~/.config/agent-manager/credentials.env` file (mode
-600, parent directory 700). These are affiliate credentials, separate from
-Hostinger hosting and Mail MCP tokens. Keys and authenticated request echoes are
-excluded from reports and API errors. Validate with
-`node --test skills/tests/hostinger-affiliate-access.test.mjs`.
-
-## Google Cloud skill
-
-`skills/gcloud` is an instruction-only skill for managing Google Cloud through the
-installed CLI. Import its folder using the existing Skills flow and attach it to
-agents that need cloud operations. It covers explicit project/identity selection,
-resource inspection, requested changes, and verification. It uses existing CLI
-authentication; analytics ADC credentials remain separate. No wrapper scripts,
-extra dependencies, or infrastructure permissions are installed by this skill.
-
-## Pinterest skill
-
-`skills/pinterest` provides named-account and named-app Pinterest API commands for Pins, boards,
-analytics, video uploads, and Trends, plus flexible documented API requests.
-Import its folder through the existing Skills flow; no server restart is needed.
-Run `node skills/pinterest/scripts/pinterest.mjs --help` for available commands.
-
-Keep each account’s app credentials and issued OAuth tokens in
-`~/.config/agent-manager/pinterest/accounts.json` (directory mode 700, file mode
-600), outside Git. Its shape is shown in
-`skills/pinterest/references/accounts.example.json`; empty token fields must be
-filled locally before authenticated calls work. Add `expiresAt` as an ISO date/time
-when known; refresh tokens rotate automatically when needed. Select each account
-and its app explicitly with `--account NAME --app NAME`. Each account contains
-a named `apps` object; credentials and token metadata live inside the selected
-app entry. Trial/sandbox creation does not establish public
-visibility; public publishing requires the appropriate app access tier.
-
-Writes and media uploads are not retried automatically after uncertain failures.
-Reports and publishing receipts can be saved to new files in the session working
-folder with `--output`. Test the helpers with
-`pnpm --filter @agentos/skill-pinterest test`.
-
-## Traffic Analyst agent
-
-`agents/traffic-analyst.md` is the maintained instruction source for the Traffic
-Analyst agent. It uses Codex with `google-search-console`, `google-analytics`, and
-`bing-webmaster` attached through the existing agent skill assignments. It
-discovers website properties, investigates traffic changes and on-site outcomes,
-and produces evidence-backed reports with prioritized actions. Missing sources
-are disclosed without blocking analysis of available data.
-
-The configured agent stores a snapshot of these instructions in the database;
-editing this file does not automatically update it, and editing the agent in the
-UI does not update this file. Keep them synchronized when changing the agent.
-For example, select Traffic Analyst when creating a session and ask:
-“Analyze traffic for example.com over the last 28 complete days. Explain the
-main changes and prioritize opportunities to improve qualified traffic.”
-
-The workflow draws inspiration from Anthropic's published
-[analysis](https://github.com/anthropics/knowledge-work-plugins/blob/main/data/skills/analyze/SKILL.md)
-and [validation](https://github.com/anthropics/knowledge-work-plugins/blob/main/data/skills/validate-data/SKILL.md)
-workflows, adapted to the existing analytics skills. No external plugin or MCP
-server is required.
+Keep skill folders, and any credentials their scripts read, outside this
+repository.
 
 ## Session permissions
 
@@ -824,3 +772,7 @@ permissions. File references remain visible in stored chat messages.
 
 File endpoints require a trusted dashboard Origin header. Uploaded files are not
 served as public assets.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
