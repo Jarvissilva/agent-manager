@@ -1,5 +1,8 @@
 {
   "name": "agentos",
+  "version": "0.1.0",
+  "description": "Local workspace for running AI coding agents from one dashboard.",
+  "license": "MIT",
   "private": true,
   "packageManager": "pnpm@10.22.0",
   "engines": {
